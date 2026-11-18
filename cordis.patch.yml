@@ -1,0 +1,10 @@
+# dsh-iicp-kanban bundle patch.
+# The bundle is selected through the profile's `dsh.profile.bundles` list; this
+# patch inserts the host half of the plugin. The browser half is discovered from
+# package.json `dsh.client` by @deepseek-ai/dsh-client-modules.
+#
+# No `config:` block: the plugin never reads Cordis config. Board settings live
+# in the board state (state.json) and are edited from the settings UI.
+- insert:
+    - id: iicp-kanban
+      name: "dsh-iicp-kanban"
