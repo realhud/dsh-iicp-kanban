@@ -191,10 +191,6 @@ window.__ModuleLoader__.load({
       待验收: "Awaiting review",
       暂无待验收: "Nothing awaiting review",
       全部处理完了: "All caught up",
-      还没有队长: "No lead yet",
-      "团队里还没有成员。新建的第一个成员会自动成为队长。":
-        "No members yet. The first member you create becomes the team lead.",
-      新建成员成为队长: "New member (becomes the lead)",
       人格: "Personality",
       技能: "Skills",
       提供方: "Provider",
@@ -230,11 +226,8 @@ window.__ModuleLoader__.load({
       门下: "reports",
       成员: "Members",
       暂无成员: "No members",
-      "还没有工作成员。新建成员时选「工作成员」，或直接建一个（有队长时默认就是工作成员）。":
-        "No workers yet. Create a member and pick “worker” — with a lead in place that is the default.",
-      队长已卸任: "The lead stepped down",
-      "这些成员暂时没有队长，先指定一位队长或把他们挂到现任队长名下。":
-        "These members have no lead. Appoint a lead or attach them to the current one.",
+      "还没有工作成员。点「新建成员」即可加入团队，新成员自动挂到队长名下。":
+        "No workers yet. Use “New member” to add one — new members join under the lead automatically.",
       任务数: "Tasks",
       进行中数: "In progress",
       受阻数: "Blocked",
@@ -473,7 +466,6 @@ window.__ModuleLoader__.load({
 .iicp-team-skill{font-size:10px;line-height:1.6;color:var(--iicp-ink-3);border:0.5px solid var(--iicp-line-soft);border-radius:5px;padding:0 5px;white-space:nowrap}
 .iicp-team-grid{display:grid;align-items:start;grid-template-columns:repeat(auto-fill,minmax(min(100%,252px),1fr));gap:10px}
 .iicp-team-card{display:grid;gap:8px;min-width:0;padding:12px;border:0.5px solid var(--iicp-line);border-radius:12px;background:var(--iicp-surface)}
-.iicp-team-card.is-orphan{border-color:color-mix(in srgb,var(--iicp-amber) 45%,transparent)}
 .iicp-team-card-head{display:flex;align-items:flex-start;gap:9px;min-width:0}
 .iicp-team-card-head .iicp-team-avatar{width:28px;height:28px;font-size:12px}
 .iicp-team-tag{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:500;line-height:1.6;border-radius:5px;padding:0 6px;white-space:nowrap;color:var(--iicp-ink-3);background:color-mix(in srgb,var(--iicp-ink) 5%,transparent)}
@@ -1313,7 +1305,6 @@ window.__ModuleLoader__.load({
   box-shadow:inset 0 0 30px rgba(70,242,164,.07),0 0 30px rgba(70,242,164,.12),0 14px 30px rgba(0,0,0,.30);
 }
 .iicp-board .iicp-team-card[data-status="blocked"]{border-color:rgba(255,107,139,.40)}
-.iicp-board .iicp-team-card.is-orphan{border-color:rgba(255,215,94,.50)}
 .iicp-board .iicp-team-card-head{
   display:grid;
   grid-template-columns:44px minmax(0,1fr);
@@ -3417,9 +3408,8 @@ window.__ModuleLoader__.load({
       const lead = team?.lead || members.find((m) => m.kind === "lead") || null;
       const workerRows = team?.workers?.length
         ? team.workers
-        : members.filter((m) => m.kind === "worker").map((m) => ({ ...m, orphan: !m.leadId }));
+        : members.filter((m) => m.kind === "worker");
       const pendingReviews = team?.pendingReviews || [];
-      const orphanWorkers = workerRows.filter((worker) => worker.orphan);
       const tasks = (state?.tasks || []).filter((task) => !task.archived);
       const taskFlow = STATUS_KEYS.map((status) => ({
         status,
@@ -3454,9 +3444,7 @@ window.__ModuleLoader__.load({
             null,
             member.kind === "lead"
               ? "—"
-              : member.leadId
-                ? members.find((m) => m.id === member.leadId)?.name || member.leadId
-                : React.createElement("span", { className: "iicp-team-sub" }, t("暂无队长")),
+              : members.find((m) => m.id === member.leadId)?.name || member.leadId || "",
           ),
           React.createElement("td", null, member.title),
           React.createElement("td", null, String(workload.get(member.id) || 0)),
@@ -3475,21 +3463,23 @@ window.__ModuleLoader__.load({
               },
               t("编辑"),
             ),
-            " ",
-            React.createElement(
-              "button",
-              {
-                className: "iicp-btn danger",
-                type: "button",
-                onClick: () => {
-                  if (!window.confirm(`${t("确认删除")} ${member.name}`)) return;
-                  api("/member.delete", { method: "POST", body: JSON.stringify({ id: member.id }) })
-                    .then(reload)
-                    .catch(() => reload());
-                },
-              },
-              t("删除"),
-            ),
+            // The lead is a constant member: no delete entry is rendered for it.
+            member.kind === "lead"
+              ? null
+              : React.createElement(
+                  "button",
+                  {
+                    className: "iicp-btn danger",
+                    type: "button",
+                    onClick: () => {
+                      if (!window.confirm(`${t("确认删除")} ${member.name}`)) return;
+                      api("/member.delete", { method: "POST", body: JSON.stringify({ id: member.id }) })
+                        .then(reload)
+                        .catch(() => reload());
+                    },
+                  },
+                  t("删除"),
+                ),
           ),
         );
 
@@ -3500,13 +3490,6 @@ window.__ModuleLoader__.load({
         React.createElement(
           "div",
           { className: "iicp-team" },
-          members.length === 0
-            ? React.createElement(
-                "p",
-                { className: "iicp-team-empty" },
-                t("团队里还没有成员。新建的第一个成员会自动成为队长。"),
-              )
-            : null,
 
           // —— 队长 + 团队总览（HUD 指挥台） ——
           React.createElement(
@@ -3631,7 +3614,7 @@ window.__ModuleLoader__.load({
                       React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => openMemberModal(lead) }, t("编辑")),
                     ),
                   )
-                : React.createElement("p", { className: "iicp-team-empty" }, t("还没有队长")),
+                : null,
             ),
             React.createElement(
               "aside",
@@ -3747,7 +3730,11 @@ window.__ModuleLoader__.load({
               React.createElement("span", null, workerRows.length ? `${workerRows.length}` : ""),
             ),
             workerRows.length === 0
-              ? React.createElement("p", { className: "iicp-team-empty" }, t("还没有工作成员"))
+              ? React.createElement(
+                  "p",
+                  { className: "iicp-team-empty" },
+                  t("还没有工作成员。点「新建成员」即可加入团队，新成员自动挂到队长名下。"),
+                )
               : React.createElement(
                   "div",
                   { className: "iicp-team-grid" },
@@ -3756,7 +3743,7 @@ window.__ModuleLoader__.load({
                       "article",
                       {
                         key: worker.id,
-                        className: `iicp-team-card${worker.orphan ? " is-orphan" : ""}`,
+                        className: "iicp-team-card",
                         "data-status": worker.status || "idle",
                       },
                       React.createElement(
@@ -3793,9 +3780,6 @@ window.__ModuleLoader__.load({
                         React.createElement("span", null, t("进行中数"), " ", React.createElement("b", null, String(worker.inFlight ?? 0))),
                         React.createElement("span", null, t("受阻数"), " ", React.createElement("b", null, String(worker.blocked ?? 0))),
                       ),
-                      worker.orphan
-                        ? React.createElement("p", { className: "iicp-note-tiny" }, t("队长已卸任"))
-                        : null,
                       React.createElement(
                         "div",
                         { className: "iicp-team-card-actions" },
@@ -3806,10 +3790,6 @@ window.__ModuleLoader__.load({
                   ),
                 ),
           ),
-
-          orphanWorkers.length
-            ? React.createElement("p", { className: "iicp-team-banner" }, t("这些成员暂时没有队长，先指定一位队长或把他们挂到现任队长名下。"))
-            : null,
         ),
 
         rosterOpen
@@ -4291,7 +4271,6 @@ window.__ModuleLoader__.load({
     function MemberModal({ initial, state, onClose, reload }) {
       const [name, setName] = React.useState(initial?.name || "");
       const [role, setRole] = React.useState(initial?.role || "member");
-      const [kind, setKind] = React.useState(initial?.kind || "");
       const [leadId, setLeadId] = React.useState(initial?.leadId || "");
       const [title, setTitle] = React.useState(initial?.title || "");
       const [contact, setContact] = React.useState(initial?.contact || "");
@@ -4304,10 +4283,10 @@ window.__ModuleLoader__.load({
       const { catalog, loading: catalogLoading } = useModelCatalog();
 
       const members = (state?.members || []).filter((m) => !m.archived);
-      const currentLead = members.find((m) => m.kind === "lead") || null;
-      // A new member joins an existing lead by default; only when the team has
-      // no lead yet does the server make this one the lead.
-      const kindValue = kind || (initial ? initial.kind || "worker" : currentLead ? "worker" : "lead");
+      // The member type is a server-side constant (the lead can neither be
+      // deleted nor demoted), so the modal never edits kind: creation lets the
+      // server derive it, editing echoes back the stored kind untouched.
+      const kindValue = initial ? initial.kind || "worker" : "worker";
       const leadOptions = members.filter((m) => m.kind === "lead" && m.id !== initial?.id);
 
       // ---- model directory ----
@@ -4377,7 +4356,6 @@ window.__ModuleLoader__.load({
         const body = {
           name: name.trim(),
           role,
-          kind: kindValue,
           title,
           contact,
           personality,
@@ -4386,6 +4364,9 @@ window.__ModuleLoader__.load({
           model,
           status,
         };
+        // Creation omits kind on purpose: the server derives it (worker unless
+        // the team has no lead). Editing echoes the stored kind back untouched.
+        if (initial) body.kind = initial.kind;
         // The lead never reports to anyone; workers may stay orphaned on purpose.
         if (kindValue === "worker" && leadId) body.leadId = leadId;
         try {
@@ -4406,7 +4387,7 @@ window.__ModuleLoader__.load({
       return React.createElement(
         Modal,
         {
-          title: initial ? t("编辑") : currentLead ? t("新建成员") : t("新建成员成为队长"),
+          title: initial ? t("编辑") : t("新建成员"),
           onClose,
           footer: [
             React.createElement("button", { key: "cancel", className: "iicp-btn", type: "button", onClick: onClose }, t("取消")),
@@ -4422,13 +4403,6 @@ window.__ModuleLoader__.load({
         React.createElement(
           "div",
           { className: "iicp-field-row" },
-          React.createElement(Field, { label: t("成员") },
-            React.createElement(
-              "select",
-              { value: kindValue, onChange: (e) => setKind(e.target.value) },
-              Object.entries(KIND_LABELS).map(([value, label]) =>
-                React.createElement("option", { key: value, value }, t(label))),
-            )),
           React.createElement(Field, { label: t("角色") },
             React.createElement(
               "select",
@@ -4442,7 +4416,6 @@ window.__ModuleLoader__.load({
                 "select",
                 { value: leadId, onChange: (e) => setLeadId(e.target.value) },
                 [
-                  React.createElement("option", { key: "__none__", value: "" }, t("暂无队长")),
                   ...leadOptions.map((member) =>
                     React.createElement("option", { key: member.id, value: member.id }, member.name)),
                 ],

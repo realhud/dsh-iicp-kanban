@@ -68,29 +68,46 @@ async function withService(fn, { seed, ctx } = {}) {
   }
 }
 
-/** Create a lead plus one worker and return their ids. */
+/** Create a worker under the seeded default lead and return their ids. */
 async function seedTeam(service, { workerName = "青岚" } = {}) {
-  const lead = await call(service, "/member.create", {
-    method: "POST",
-    body: { name: "墨渊", kind: "lead", title: "主理人", personality: "沉稳，先问目标再动手", skills: ["拆解", "验收"] },
-  });
-  assert.equal(lead.status, 200);
+  const team = await call(service, "/team");
+  assert.ok(team.json.team.lead, "seeded default lead must exist");
+  const leadId = team.json.team.lead.id;
   const worker = await call(service, "/member.create", {
     method: "POST",
-    body: { name: workerName, title: "执行", leadId: lead.json.member.id, skills: ["前端", "前端"] },
+    body: { name: workerName, title: "执行", leadId, skills: ["前端", "前端"] },
   });
   assert.equal(worker.status, 200);
-  return { leadId: lead.json.member.id, workerId: worker.json.member.id };
+  return { leadId, workerId: worker.json.member.id };
 }
 
-test("first member becomes the lead, the next ones become its workers", async () => {
+test("an empty roster is seeded with a default lead on start", async () => {
   await withService(async (service) => {
+    const team = await call(service, "/team");
+    assert.ok(team.json.team.lead, "a default lead must be seeded");
+    assert.equal(team.json.team.lead.name, "队长");
+    assert.equal(team.json.team.lead.kind, "lead");
+
+    const state = await call(service, "/state");
+    const stored = state.json.members.find((m) => m.name === "队长");
+    assert.equal(stored.kind, "lead");
+    assert.equal(stored.role, "owner");
+    assert.equal(stored.leadId, "");
+  });
+});
+
+test("new members become workers under the seeded lead", async () => {
+  await withService(async (service) => {
+    const lead = await call(service, "/team");
+    const leadId = lead.json.team.lead.id;
+
     const first = await call(service, "/member.create", { method: "POST", body: { name: "墨渊" } });
-    assert.equal(first.json.member.kind, "lead");
+    assert.equal(first.json.member.kind, "worker");
+    assert.equal(first.json.member.leadId, leadId);
 
     const second = await call(service, "/member.create", { method: "POST", body: { name: "青岚" } });
     assert.equal(second.json.member.kind, "worker");
-    assert.equal(second.json.member.leadId, first.json.member.id);
+    assert.equal(second.json.member.leadId, leadId);
     assert.equal(second.json.member.status, "idle");
   });
 });
@@ -108,10 +125,10 @@ test("invalid kind and unknown leadId are rejected", async () => {
     const badKind = await call(service, "/member.create", { method: "POST", body: { name: "甲", kind: "boss" } });
     assert.equal(badKind.status, 400);
 
-    // A valid lead must exist first, otherwise the next member *is* the lead
-    // and its leadId is irrelevant.
-    const lead = await call(service, "/member.create", { method: "POST", body: { name: "墨渊" } });
-    assert.equal(lead.json.member.kind, "lead");
+    // The seeded lead exists, so an explicit lead request is a conflict and
+    // an unknown leadId is invalid.
+    const existing = await call(service, "/member.create", { method: "POST", body: { name: "墨渊", kind: "lead" } });
+    assert.equal(existing.status, 409);
 
     const badLead = await call(service, "/member.create", { method: "POST", body: { name: "乙", leadId: "m_missing" } });
     assert.equal(badLead.status, 400);
@@ -290,25 +307,37 @@ test("worker status is derived from the live task column", async () => {
   });
 });
 
-test("stepping the lead down orphans workers; a new lead adopts them", async () => {
+test("the lead cannot step down: kind stays lead", async () => {
   await withService(async (service) => {
     const { leadId, workerId } = await seedTeam(service);
 
     const demoted = await call(service, "/member.update", { method: "POST", body: { id: leadId, kind: "worker" } });
-    assert.equal(demoted.status, 200);
-    assert.equal(demoted.json.member.kind, "worker");
+    assert.equal(demoted.status, 400);
+    assert.match(demoted.json.message, /队长不可被卸任/);
 
-    let team = await call(service, "/team");
-    assert.equal(team.json.team.lead, null);
-    assert.equal(team.json.team.orphanWorkers, 2);
-
-    const promoted = await call(service, "/member.update", { method: "POST", body: { id: workerId, kind: "lead" } });
-    assert.equal(promoted.status, 200);
-
-    team = await call(service, "/team");
-    assert.equal(team.json.team.lead.id, workerId);
+    // The lead keeps its role and its workers stay attached.
+    const team = await call(service, "/team");
+    assert.equal(team.json.team.lead.id, leadId);
     assert.equal(team.json.team.orphanWorkers, 0);
-    assert.equal(team.json.team.workers.find((w) => w.id === leadId).leadId, workerId);
+    assert.equal(team.json.team.workers.find((w) => w.id === workerId).leadId, leadId);
+
+    // Promoting a second lead while one exists is still a conflict.
+    const promoted = await call(service, "/member.update", { method: "POST", body: { id: workerId, kind: "lead" } });
+    assert.equal(promoted.status, 409);
+    assert.match(promoted.json.message, /团队已经有队长/);
+  });
+});
+
+test("the lead's profile fields stay editable", async () => {
+  await withService(async (service) => {
+    const { leadId } = await seedTeam(service);
+    const updated = await call(service, "/member.update", {
+      method: "POST",
+      body: { id: leadId, name: "墨渊", title: "主理人", personality: "沉稳" },
+    });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.json.member.kind, "lead");
+    assert.equal(updated.json.member.name, "墨渊");
   });
 });
 
@@ -347,16 +376,19 @@ test("/team reports lead, workers, pending reviews and queue pressure", async ()
   });
 });
 
-test("removing the lead leaves workers and tasks intact", async () => {
+test("removing the lead is rejected; workers and tasks stay intact", async () => {
   await withService(async (service) => {
     const { leadId, workerId } = await seedTeam(service);
     const task = await call(service, "/task.create", { method: "POST", body: { title: "别丢", assigneeId: workerId } });
 
-    await call(service, "/member.delete", { method: "POST", body: { id: leadId } });
+    const deleted = await call(service, "/member.delete", { method: "POST", body: { id: leadId } });
+    assert.equal(deleted.status, 400);
+    assert.match(deleted.json.message, /队长不可被删除/);
+
     const team = await call(service, "/team");
-    assert.equal(team.json.team.lead, null);
+    assert.equal(team.json.team.lead.id, leadId);
     assert.equal(team.json.team.workers.length, 1);
-    assert.equal(team.json.team.workers[0].leadId, "");
+    assert.equal(team.json.team.workers[0].leadId, leadId);
     assert.equal(team.json.team.unassigned, 0);
 
     const state = await call(service, "/state");

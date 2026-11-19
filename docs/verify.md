@@ -118,6 +118,16 @@
 
 - [x] **「新增成员」按钮尺寸（2026-11-19 本地，桌面取证，截图 docs/ui-add-member-btn-compact-v3.png）**：团队视图队长卡内按钮由全宽 31px 恢复为 26px 常规尺寸（与「编辑」按钮同规格），刷新后实测不再撑满卡片。
 
+### v0.5 队长恒定（protect-team-lead）
+
+- [x] **删队长 → 400**：`/member.delete` 传 lead id → `400 invalid-input`「队长不可被删除」，成员与任务不受影响（`tests/team.test.mjs`「removing the lead is rejected; workers and tasks stay intact」）。
+- [x] **卸任 → 400**：`/member.update` 传 `{kind:"worker"}` → `400`「队长不可被卸任」，kind 保持 lead（「the lead cannot step down: kind stays lead」）；队长资料字段编辑仍 200（「the lead's profile fields stay editable」）。
+- [x] **唯一队长守卫回归**：唯一队长存在时显式建第二 lead → 409「团队已经有队长…」（既有挡板不变）。
+- [x] **空安装自动种子**：空成员表 `start()` 后 `GET /team` 出现队长「队长」（kind=lead、role=owner、画像空）；新建成员默认为 worker 挂其名下（「an empty roster is seeded with a default lead on start」「new members become workers under the seeded lead」）。
+- [x] **种子幂等/共存**：已有队长时启动不重复种子；v0.2.7 老数据（有成员无 lead）走提升分支不种子（「pre-0.3 member data gains a promoted lead on start」）。
+- [x] **冒烟**：`node scripts/smoke-team.mjs` → SMOKE-TEAM-PASS（含空安装种子、删队长 400、卸任 400、第二队长 409、派单/提交/验收全链路）。
+- [ ] **UI 走查（待桌面取证）**：团队视图无「还没有队长」空态、无「队长已卸任」标注、无 orphan 提示条；成员弹窗无「成员类型」下拉、标题恒为「新建成员/编辑」；明细表队长行无删除按钮。
+
 ### v0.5 产品名（改名）
 
 - [x] **全库口径统一（2026-11-19 本地，桌面取证，截图 docs/ui-rename-full.png、ui-rename-sidebar.png）**：`client.js` 三处（`EN_MESSAGES` 词条、`.iicp-title` 页头、`sidebar.panellist` 的 `label`）由「团队看板」改为「一体化智能协作平台」，README / `docs/manual.md` / `docs/ui.md` / `docs/verify.md` / `docs/acceptance-review-2026-11-18.md` 与 `package.json` description 同步；`rg "团队看板|团队任务看板|Team board"` 除本节改名说明外全库 0 命中；`node --check client.js` 通过，`node --test` 73/73。

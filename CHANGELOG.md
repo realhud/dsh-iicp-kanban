@@ -2,6 +2,14 @@
 
 ## 未发布
 
+**队长恒定：不可删除、不可卸任，空队自动种子（breaking）**：队长从「可换的职务」变为团队的恒定角色，换队长路径整体关闭——
+
+- **服务端守卫**：`/member.delete` 删 lead → `400`「队长不可被删除」；`/member.update` lead→worker（卸任）→ `400`「队长不可被卸任」。两个操作从「无破坏换人」变为领域不变量违例（`server/service.mjs`；取代 v0.3 决策 24 的「删队长不级联删工人 / 卸任不连坐」语义）。队长资料字段（名称/职位/人格/技能/模型等）仍可正常编辑；worker→lead 晋升与建队长的 409 挡板保持不变。
+- **启动种子**：成员表为空时 `settleTeam()` 自动创建默认队长「队长」（`kind:"lead"`、`role:"owner"`、画像字段空串），分支顺序：种子 → 提升最早成员（v0.2.7 老数据迁移）→ 清悬空 leadId；`/member.create` 的 kind 推导保留作兜底，正常安装下恒得到 worker。
+- **客户端删分支**：成员弹窗移除「成员类型」下拉与「新建成员成为队长」标题；团队视图移除「还没有队长」空态、「团队里还没有成员…」引导、「队长已卸任」标注、orphan 提示条（`.iicp-team-banner`）与 `.is-orphan` 琥珀描边；全员明细表队长行不再渲染删除按钮，与服务端守卫构成双层防护。
+- **测试** 73→**75/75**（`tests/team.test.mjs` 重写团队生命周期用例：种子、删/卸任 400、资料可编辑、新成员挂种子队长；`tests/service.test.mjs` 补 `start()` 调用对齐生产语义；`scripts/smoke-team.mjs` 增加空安装种子链路）。
+- **文档**：`docs/api.md`（400 错误行与错误码表）、`docs/domain.md`（不变量 11「每队恰一名队长」）、`docs/architecture.md`（决策 28）、`docs/manual.md`、`docs/ui.md`、`docs/verify.md`（新增 v0.5 队长恒定验收节）。
+
 **「新增成员」按钮恢复正常尺寸**：队长卡内的该按钮此前被 `.iicp-team-lead-add .iicp-btn` 的 `flex:1` 拉成全宽、31px 高（v0.3 移入队长卡时的旧设计）；现改为与卡内「编辑」按钮同规格（26px 高、`padding:0 9px`、11px 字号、去掉字距拉伸），不再横向撑满卡片（client.js `.iicp-board .iicp-team-lead-add .iicp-btn`）。
 
 **产品名统一为「一体化智能协作平台」**：侧边栏入口文案（`client.js` 的 `sidebar.panellist` `label`）、主区域页头标题（`.iicp-title`）与 `EN_MESSAGES` 词条（新键 `一体化智能协作平台: "Integrated Collaboration Platform"`）一并改名，不再使用旧名「团队看板」；README / `docs/manual.md` / `docs/ui.md` / `docs/verify.md` / `docs/acceptance-review-2026-11-18.md` 与 `package.json` 的 description 同步统一口径。英文词条改为显式映射，英文界面不会回落显示中文。

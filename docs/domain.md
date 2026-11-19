@@ -45,9 +45,10 @@
 | title / contact | ≤60 / ≤80 字 |
 | archived | boolean |
 
-**唯一性**：一支队伍**只有一个队长**。第一个成员自动成为 lead；已有 lead 时再建 lead 返回 409「团队已经有队长（X），请先解除再指定新队长」。
+**唯一性**：一支队伍**只有一个队长**。已有 lead 时再建 lead 返回 409「团队已经有队长（X），请先解除再指定新队长」。
+**种子（v0.5）**：成员表为空时，`start()` 的 `settleTeam()` 自动创建默认队长（名称「队长」、`kind:"lead"`、`role:"owner"`、画像字段空串），因此每个团队从诞生起就有一名队长。
 **接管**：lead 上任（新建为 lead 或由 worker 提升）时，所有 `leadId` 为空的 worker 自动挂到该 lead 名下（`adoptOrphanWorkers`）。
-**卸任**：lead 降级为 worker 时，其名下 worker 的 `leadId` 清空（继续可运行，只是暂无队长），不删任何成员与任务。
+**恒定角色（v0.5，取代旧「卸任」语义）**：队长不可被删除（`/member.delete` → 400「队长不可被删除」）、不可被降级为 worker（`/member.update` kind=worker → 400「队长不可被卸任」），换队长路径整体关闭；队长资料字段（name/title/personality/skills/provider/model/status 等）仍可正常编辑。worker→lead 晋升仅在团队确实没有队长时可能（v0.2.7 兼容路径），正常安装下只会得到 409。
 
 ### Task 的验收字段（v0.3）
 | 字段 | 取值 |
@@ -91,18 +92,17 @@
 
 | 语义 | 规则 | 实现位置 |
 | --- | --- | --- |
-| 一队一队长 | 第一个成员自动成为 `lead`；已有 lead 再建 lead → 409「团队已经有队长（X），请先解除再指定新队长」 | `service.mjs /member.create` |
+| 一队一队长 | 已有 lead 再建 lead → 409「团队已经有队长（X），请先解除再指定新队长」 | `service.mjs /member.create` |
 | 自动挂靠 | worker 未显式给 `leadId` 时自动挂到现任 lead；显式 `""` 才保持 orphan | 同上 |
 | 接管 orphan | lead 上任时把所有 `leadId===""` 的 worker 收到名下 | `adoptOrphanWorkers` |
-| 卸任不连坐 | lead 降级为 worker：名下 worker 的 `leadId` 清空，成员与任务全部保留 | `/member.update` |
+| 空队种子（v0.5） | 成员表为空时启动即创建默认队长「队长」（kind=lead、role=owner） | `settleTeam` |
+| 队长恒定（v0.5，取代「卸任不连坐」） | lead 不可删除（400「队长不可被删除」）、不可降级（400「队长不可被卸任」）；资料字段可编辑 | `/member.delete` `/member.update` |
 | 成员状态派生 | worker 的 status 由任务推导：有 blocked→`blocked`；有 backlog/in_progress→`working`；否则 `idle`。lead 不自动派生 | `refreshMemberStatus` / `refreshTeam` |
 | 派单 | owner 或 lead 把任务指给 worker：`assigneeId` 写入、backlog→in_progress、清空旧验收态、写 `kind:"assignee"` history | `/member.dispatch` |
 | 做的人不验收 | worker 只能 `report` 提交（`reviewStatus="pending"`），**不改状态列**（仍是 in_progress）；只有 lead 能 `review` 判定 | `/member.report` `/member.review` |
 | 职责隔离 | 任务已属他人 → 400「任务属于 X，Y 无法回报」；非 pending 的任务不能验收 → 409；验收人不能是被验收的 assignee → 400「自己完成的任务不能自己验收，请移交队长」 | 同上 |
 | 人工越权优先 | owner 在看板把 worker 任务直接拖到 done，视同验收：`reviewStatus="accepted"` + note「人工直接完成（视同验收）」 | `settleReviewOnStatus` |
-| 启动自愈 | 升级前无 kind 字段：启动时若全队无 lead 且有成员，把 `createdAt` 最早的成员提升为 lead；指向已删 lead 的 `leadId` 清空 | `settleTeam` |
-
-## 状态机
+| 启动自愈 | 升级前无 kind 字段：启动时若全队无 lead 且有成员，把 `createdAt` 最早的成员提升为 lead；指向已删 lead 的 `leadId` 清空 | `settleTeam` |## 状态机
 
 ### Task.status
 ```
@@ -130,7 +130,7 @@ accepted/changes ──任务离开 done 或被改派──> none
 
 ### 实体生命周期
 - Task: create → update*(history 累积) → archived? → delete（物理删除）。
-- Member: create → update(含 kind 升降/换队长) → delete；**删除级联**：其任务 assigneeId→"" + history「成员已移除，任务改为未指派（原成员：X）」；若删的是 lead，只把名下 worker 的 `leadId` 清空，**不删工人、不解绑任务**。
+- Member: create → update(资料字段；**kind 不可从 lead 改出**) → delete(**仅 worker 可删**)；**删除级联**：其任务 assigneeId→"" + history「成员已移除，任务改为未指派（原成员：X）」。
 - Project: create → update → delete；**删除级联**：其任务 projectId→"" + history「项目已删除，任务改为无项目（原项目：X）」（v2.7 起，与 Member 对齐）。
 
 ## 迁移（v1 → v2，v0.2 → v0.3）
@@ -161,3 +161,4 @@ accepted/changes ──任务离开 done 或被改派──> none
 8. **v2.7**：`project.update` 带 `expectedUpdatedAt` 且与当前值不符时必然 409，不会写入。
 9. **v0.3**：未归档成员中至多一个 `kind==="lead"`；worker 的 `leadId` 要么为空，要么指向存在的 lead。
 10. **v0.3**：`reviewStatus==="pending"` 只出现在 `status==="in_progress"` 的任务上；`accepted` 必然对应 `status==="done"`（或任务已被改派清空）。
+11. **v0.5**：每个团队恒有一名队长——空成员表由启动种子保证，成员表非空由「lead 不可删除/卸任」守卫保证；队长资料的编辑不影响这一不变量。

@@ -139,7 +139,30 @@ export function createKanbanService({ ctx } = {}) {
   function settleTeam(state) {
     let changed = false;
     const members = liveMembers(state);
-    if (members.length > 0 && !findLead(state)) {
+    // Seed: a brand-new board starts with a default lead so the team always
+    // has exactly one lead from the very first read (protect-team-lead).
+    if (members.length === 0) {
+      state.members.push({
+        id: newId("m"),
+        name: "队长",
+        title: "",
+        contact: "",
+        role: "owner",
+        kind: "lead",
+        leadId: "",
+        personality: "",
+        skills: [],
+        provider: "",
+        model: "",
+        status: "idle",
+        sessionId: "",
+        archived: false,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      changed = true;
+      logger?.info?.(`[iicp-kanban] seeded default team lead "队长" (empty roster)`);
+    } else if (!findLead(state)) {
       const oldest = members
         .filter((member) => member.kind === "worker")
         .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0];
@@ -520,12 +543,9 @@ export function createKanbanService({ ctx } = {}) {
           member.leadId = "";
           adoptOrphanWorkers(state, member);
         } else if (body.kind === "worker" && member.kind === "lead") {
-          // Stepping down: workers keep running, just orphaned until a new lead.
-          member.kind = "worker";
-          member.leadId = "";
-          for (const worker of liveMembers(state)) {
-            if (worker.leadId === member.id) worker.leadId = "";
-          }
+          // The lead is a permanent role: stepping down is no longer allowed
+          // (protect-team-lead). Workers keep their lead instead of orphaning.
+          throw badRequest("队长不可被卸任");
         } else {
           member.kind = body.kind;
         }
@@ -545,6 +565,9 @@ export function createKanbanService({ ctx } = {}) {
       requireObject(body);
       const index = state.members.findIndex((m) => m.id === body.id);
       if (index < 0) throw notFound(`member not found: ${body.id}`);
+      // The lead is a permanent role: it cannot be removed, only its profile
+      // fields can be edited (see protect-team-lead).
+      if (state.members[index].kind === "lead") throw badRequest("队长不可被删除");
       const [removed] = state.members.splice(index, 1);
       // Unassign their tasks; history keeps the former assignee name.
       for (const task of state.tasks) {

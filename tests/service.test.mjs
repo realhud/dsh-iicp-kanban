@@ -58,6 +58,8 @@ async function call(service, route, { method = "GET", body } = {}) {
 function newService() {
   const home = tempHome();
   const service = createKanbanService({ ctx: fakeCtx() });
+  // Production always starts the service; start() also seeds the default lead.
+  service.start();
   // Rebind store to temp home: easiest via env var already read at import?
   return { service, home };
 }

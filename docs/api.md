@@ -78,7 +78,7 @@
 `{name(必填), role?="member", kind?∈lead/worker, leadId?, title?, contact?, personality?, skills?, provider?, model?, status?="idle"}` → `{"ok":true,"member"}`
 
 - **role**：人类权限标签（owner/admin/member/guest），非法 → 400。
-- **kind**：`lead`/`worker`，非法 → 400 `invalid kind: X`；不传时**第一个成员自动成为 lead**，其后默认 `worker`。
+- **kind**：`lead`/`worker`，非法 → 400 `invalid kind: X`；不传时由服务端推导——**团队已有队长则新成员为 `worker`，无队长（仅 v0.2.7 兼容路径，正常安装不会出现）则为 `lead`**。空成员表的团队在启动时由服务端自动种子默认队长（见 /team），因此常规调用恒得到 `worker`。
 - **leadId**：worker 的归属队长。不传时自动挂到现任 lead；显式传 `""` 表示先不归属（orphan）。指向非 lead → 400 `lead not found: X` / `member is not a lead: X`。lead 自身恒为 `""`。
 - **一队一队长**：已有 lead 时再建 lead → `409 conflict`「团队已经有队长（X），请先解除再指定新队长」。新 lead 上任会接管所有 orphan worker。
 - **skills**：数组或字符串数组，单个 ≤20 字，≤8 个，去空**先去重再截断**；**personality** ≤200；**provider/model** ≤60（画像字段，不触发真实 agent spawn，见 architecture.md）。
@@ -88,13 +88,14 @@
 `{id, name?, title?, contact?, role?, archived?, kind?, leadId?, personality?, skills?, provider?, model?, status?}` → `{"ok":true,"member"}`
 
 - **kind 升为 lead**：已有其他 lead → `409 conflict`；成功则接管所有 orphan worker。
-- **kind 降为 worker（卸任）**：名下 worker 的 `leadId` 清空，成员与任务一律保留。
+- **kind 降为 worker（卸任）——v0.5 起禁止**：lead 是恒定角色，不可卸任 → `400 invalid-input`「队长不可被卸任」（成员与任务一律不受影响；换队长路径已整体关闭）。
 - **leadId**：lead 传该字段 → 400「队长不能挂靠到其他成员」。
 - **status**：`idle`/`working`/`blocked`，非法 → 400。worker 的 status 通常由任务派生，手工设置会被下一次 `refreshMemberStatus` 覆盖。
 - **provider/model 改回空串**：显式传 `""` 即把成员切回「继承工作区」。
 
 ### POST /member.delete
-`{id}` → `{"ok":true,"deleted":id}`；级联：其任务 assigneeId→"" + 写任务 history「成员已移除…」；settings.defaultAssigneeId 清空；**若删的是 lead，仅把名下 worker 的 `leadId` 置空（不删成员、不解绑任务）**。
+`{id}` → `{"ok":true,"deleted":id}`；级联：其任务 assigneeId→"" + 写任务 history「成员已移除…」；settings.defaultAssigneeId 清空。
+**v0.5 起队长不可被删除**：`id` 指向 lead → `400 invalid-input`「队长不可被删除」（成员、任务与归属关系一律不变；每个团队恒有一名队长）。
 
 ### GET /member.workload（v0.3 扩列）
 → `{"ok":true,"workload":[ {memberId,name,role,kind,leadId,status,reviewing,total,byStatus:{...}}, …, {"memberId":"","name":"未指派","role":"","kind":"","leadId":"","status":"","reviewing":0,"total",...} ]}`（末尾固定追加未指派桶）
@@ -103,12 +104,13 @@
 团队聚合视图，供客户端一次渲染队长卡 + 工人卡 + 待验收队列。
 ```jsonc
 { "ok":true, "team":{
-  "lead": { ...Member, "workerCount":0 } | null,
+  "lead": { ...Member, "workerCount":0 },
   "workers": [ { ...Member, "taskTotal":0, "inFlight":0, "blocked":0, "awaitingReview":0, "orphan":false } ],
   "pendingReviews": [ {"taskId","title","assigneeId","assigneeName","note","updatedAt"} ],
   "unassigned": 0, "blocked": 0, "inFlight": 0, "orphanWorkers": 0,
   "generatedAt": "<ISO>" } }
 ```
+`lead` 恒非空：成员表为空时服务端启动即种子默认队长（名称「队长」、`kind:"lead"`、`role:"owner"`、画像字段空串），v0.2.7 老数据（有成员无 lead）启动时提升最早成员为队长。`workers[].orphan` 与 `orphanWorkers` 字段保留，但正常安装下恒为 0（队长不可删除/卸任）。
 `/state` 的响应体末尾同样带 `team` 字段（结构一致），客户端 8s 轮询即可拿到团队视图。
 
 ### POST /member.dispatch（v0.3）
@@ -174,5 +176,6 @@
 | 重复队长（v0.3） | 409 | conflict |
 | 重复提交验收 / 无待验收任务（v0.3） | 409 | conflict |
 | 验收人=完成人、成员非队长、leadId 悬空（v0.3） | 400 | invalid-input |
+| 删除/卸任队长（v0.5） | 400 | invalid-input |
 | 无匹配路由 | 404 | not-found（message: `no route: GET /x`） |
 | 服务端异常 | 500 | internal |
