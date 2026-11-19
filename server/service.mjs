@@ -33,6 +33,7 @@ import {
   normalizeSubtask,
 } from "./domain.mjs";
 import { badRequest, clipText, conflict, isStringArray, json, notFound, readJsonBody, validId } from "./http.mjs";
+import { buildModelCatalog, resolveService } from "./model-catalog.mjs";
 import { createStore, newId, newTaskId } from "./store.mjs";
 import { createWorkspaceSource } from "./workspaces.mjs";
 
@@ -322,6 +323,26 @@ export function createKanbanService({ ctx } = {}) {
     /* ---- board state ---- */
     if (route === "/state" && method === "GET") {
       json(res, 200, buildStatePayload(state));
+      return;
+    }
+
+    /* ---- model directory (live DSH llm service) ---- */
+    // Not part of /state on purpose: /state is polled every 8s by the client and
+    // walking every provider's model list on each poll would hammer the adapters.
+    // A missing llm service is not an HTTP error — the form still saves a manual
+    // value, so the payload stays `ok:true` and reports `available:false`.
+    if (route === "/models" && method === "GET") {
+      const catalog = await buildModelCatalog(resolveService(ctx, "llm"), resolveService(ctx, "agentDefaultModel"));
+      json(res, 200, {
+        ok: true,
+        available: catalog.ok === true,
+        defaultModel: catalog.defaultModel,
+        providers: catalog.providers,
+        providerCount: catalog.providerCount,
+        modelCount: catalog.modelCount,
+        ...(catalog.error ? { error: catalog.error } : {}),
+        generatedAt: now(),
+      });
       return;
     }
 

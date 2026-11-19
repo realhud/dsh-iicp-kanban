@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
         "en";
 
     const EN_MESSAGES = Object.freeze({
-      团队看板: "Team board",
+      一体化智能协作平台: "Integrated Collaboration Platform",
       项目: "Projects",
       成员: "Members",
       看板: "Board",
@@ -34,12 +34,14 @@ window.__ModuleLoader__.load({
       新建任务: "New task",
       新建项目: "New project",
       新建成员: "New member",
+      新增成员: "Add member",
       指派给: "Assignee",
       未指派: "Unassigned",
       优先级: "Priority",
       全部: "All",
       保存: "Save",
       取消: "Cancel",
+      关闭: "Close",
       删除: "Delete",
       编辑: "Edit",
       归档: "Archive",
@@ -197,6 +199,13 @@ window.__ModuleLoader__.load({
       技能: "Skills",
       提供方: "Provider",
       模型: "Model",
+      继承工作区: "Inherit workspace",
+      跟随工作区默认模型: "Follows the workspace default model",
+      正在读取模型目录: "Reading the model directory…",
+      模型目录不可用: "Model directory unavailable",
+      模型目录不可用可手填: "The model directory is unavailable — type the ids instead",
+      该提供方没有可用模型: "This provider has no models",
+      当前值不在目录里: "current value is not in the directory",
       会话: "Session",
       自动: "Auto",
       空闲: "Idle",
@@ -990,6 +999,40 @@ window.__ModuleLoader__.load({
   font-weight:600;
   color:#f2fdff;
 }
+.iicp-board .iicp-team-overview-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-width:0;
+}
+.iicp-board .iicp-team-roster-link{
+  flex:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  height:22px;
+  padding:0 7px;
+  border:1px solid rgba(76,230,255,.28);
+  border-radius:6px;
+  background:rgba(76,230,255,.06);
+  color:#8fe7ff;
+  font:inherit;
+  font-size:9px;
+  letter-spacing:.04em;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.iicp-board .iicp-team-roster-link b{
+  color:#eaffff;
+  font-size:10px;
+  font-variant-numeric:tabular-nums;
+}
+.iicp-board .iicp-team-roster-link:hover{
+  border-color:rgba(76,230,255,.6);
+  background:rgba(76,230,255,.13);
+  box-shadow:0 0 10px rgba(76,230,255,.18);
+}
 .iicp-board .iicp-team-overview-list{
   display:flex;
   flex-direction:column;
@@ -1381,6 +1424,13 @@ window.__ModuleLoader__.load({
 }
 /* —— 卡片动作 —— */
 .iicp-board .iicp-team-card-actions{gap:6px}
+.iicp-board .iicp-team-card-actions-spacer{flex:1}
+/* 队长卡动作行：新增成员（主按钮）左、编辑右 */
+.iicp-board .iicp-team-lead .iicp-team-card-actions{
+  display:flex;
+  align-items:center;
+  margin-top:auto;
+}
 .iicp-board .iicp-team-card-actions .iicp-btn{
   height:28px;
   padding:0 10px;
@@ -1397,6 +1447,14 @@ window.__ModuleLoader__.load({
 .iicp-board .iicp-team-card-actions .iicp-btn:first-child:hover{
   border-color:rgba(70,242,164,.7);
   box-shadow:0 0 12px rgba(70,242,164,.20);
+}
+.iicp-board .iicp-team-lead .iicp-team-card-actions .iicp-btn{
+  height:26px;
+  padding:0 9px;
+  font-size:11px;
+}
+.iicp-board .iicp-team-lead .iicp-team-card-actions .iicp-btn.primary{
+  gap:6px;
 }
 /* —— 待验收队列 —— */
 .iicp-board .iicp-team-reviews{order:4}
@@ -1446,6 +1504,23 @@ window.__ModuleLoader__.load({
 .iicp-board .iicp-team-hero .iicp-team-empty{
   margin:0;
   border-color:rgba(76,230,255,.20);
+}
+/* —— 全员明细弹窗 —— */
+.iicp-board .iicp-roster-modal{
+  width:min(940px,calc(100vw - 32px));
+  max-height:calc(100vh - 80px);
+}
+.iicp-board .iicp-roster-modal .iicp-modal-body{
+  overflow-y:auto;
+}
+.iicp-board .iicp-roster-scroll{
+  min-height:0;
+  overflow-x:auto;
+  border-radius:14px;
+}
+.iicp-board .iicp-roster-table{
+  width:100%;
+  min-width:760px;
 }
 /* —— 全员明细表 —— */
 .iicp-board .iicp-table{
@@ -2061,18 +2136,50 @@ window.__ModuleLoader__.load({
       return { state, error, reload };
     }
 
+    /**
+     * Model directory for the member form: providers and models the Host already
+     * has configured, plus the Host default selection ("inherit the workspace").
+     *
+     * Fetched once per mount on purpose — `/models` walks every provider's model
+     * list, which is far too expensive to join the 8s board poll. A failed read
+     * degrades to `available:false` so the form can fall back to free text.
+     */
+    function useModelCatalog() {
+      const [catalog, setCatalog] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const reload = React.useCallback(async () => {
+        try {
+          const payload = await api("/models");
+          setCatalog({ ...payload, available: payload.available !== false });
+        } catch (cause) {
+          setCatalog({
+            available: false,
+            providers: [],
+            defaultModel: null,
+            error: { code: "E_MODEL_DIRECTORY", message: String(cause?.message || cause) },
+          });
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+      React.useEffect(() => {
+        reload();
+      }, [reload]);
+      return { catalog, loading, reload };
+    }
+
     function useModal(initial) {
       const [modal, setModal] = React.useState(null);
       return [modal, setModal, () => setModal(null)];
     }
 
-    function Modal({ title, onClose, children, footer }) {
+    function Modal({ title, onClose, children, footer, className }) {
       return React.createElement(
         "div",
         { className: "iicp-modal-backdrop", onMouseDown: (e) => e.target === e.currentTarget && onClose() },
         React.createElement(
           "div",
-          { className: "iicp-modal" },
+          { className: `iicp-modal${className ? ` ${className}` : ""}` },
           React.createElement("h2", null, title),
           React.createElement("div", { className: "iicp-modal-body" }, children),
           React.createElement("div", { className: "iicp-modal-actions" }, footer),
@@ -2090,6 +2197,15 @@ window.__ModuleLoader__.load({
     const PRIORITY_LABELS = { P0: "P0 紧急", P1: "P1 高", P2: "P2 中", P3: "P3 低" };
     const KIND_LABELS = { lead: "队长", worker: "工作成员" };
     const MEMBER_STATUS_LABELS = { idle: "空闲", working: "工作中", blocked: "受阻中" };
+
+    // An empty provider/model is the inherit state: the member follows the Host
+    // default selection. Say so, otherwise "inherit" and "never configured"
+    // both look like an empty subtitle on the team cards.
+    function memberModelLabel(member) {
+      if (!member) return "";
+      if (member.provider && member.model) return `${member.provider}/${member.model}`;
+      return member.provider || member.model || t("继承工作区");
+    }
 
     /* ---------------- card icons / relative time ---------------- */
     function Icon({ name, size = 10 }) {
@@ -3284,6 +3400,7 @@ window.__ModuleLoader__.load({
     function MembersView({ state, reload, openMemberModal, leading, pushToast }) {
       const [dispatchFor, setDispatchFor] = React.useState(null);
       const [reviewEntry, setReviewEntry] = React.useState(null);
+      const [rosterOpen, setRosterOpen] = React.useState(false);
 
       const workload = React.useMemo(() => {
         const map = new Map();
@@ -3346,7 +3463,18 @@ window.__ModuleLoader__.load({
           React.createElement(
             "td",
             null,
-            React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => openMemberModal(member) }, t("编辑")),
+            React.createElement(
+              "button",
+              {
+                className: "iicp-btn",
+                type: "button",
+                onClick: () => {
+                  setRosterOpen(false);
+                  openMemberModal(member);
+                },
+              },
+              t("编辑"),
+            ),
             " ",
             React.createElement(
               "button",
@@ -3467,7 +3595,7 @@ window.__ModuleLoader__.load({
                         React.createElement(
                           "span",
                           { className: "iicp-team-sub" },
-                          [lead.title, lead.model || lead.provider].filter(Boolean).join(" · ") || t("队长"),
+                          [lead.title, memberModelLabel(lead)].filter(Boolean).join(" · ") || t("队长"),
                         ),
                       ),
                       React.createElement(
@@ -3490,6 +3618,16 @@ window.__ModuleLoader__.load({
                     React.createElement(
                       "div",
                       { className: "iicp-team-card-actions" },
+                      React.createElement(
+                        "button",
+                        { className: "iicp-btn primary", type: "button", onClick: () => openMemberModal(null) },
+                        React.createElement(Icon, { name: "plus", size: 12 }),
+                        t("新增成员"),
+                      ),
+                      React.createElement(
+                        "span",
+                        { className: "iicp-team-card-actions-spacer" },
+                      ),
                       React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => openMemberModal(lead) }, t("编辑")),
                     ),
                   )
@@ -3502,7 +3640,17 @@ window.__ModuleLoader__.load({
                 "div",
                 { className: "iicp-team-overview-head" },
                 React.createElement("span", { className: "iicp-team-overview-kicker" }, "SQUAD STATUS"),
-                React.createElement("h3", null, t("团队总览")),
+                React.createElement(
+                  "div",
+                  { className: "iicp-team-overview-title" },
+                  React.createElement("h3", null, t("团队总览")),
+                  React.createElement(
+                    "button",
+                    { className: "iicp-team-roster-link", type: "button", onClick: () => setRosterOpen(true) },
+                    t("全部成员"),
+                    React.createElement("b", null, members.length),
+                  ),
+                ),
               ),
               React.createElement(
                 "div",
@@ -3622,7 +3770,7 @@ window.__ModuleLoader__.load({
                           React.createElement(
                             "span",
                             { className: "iicp-team-sub" },
-                            [worker.title, worker.provider && worker.model ? `${worker.provider}/${worker.model}` : worker.model]
+                            [worker.title, memberModelLabel(worker)]
                               .filter(Boolean)
                               .join(" · ") || t("工作成员"),
                           ),
@@ -3664,35 +3812,48 @@ window.__ModuleLoader__.load({
             : null,
         ),
 
-        // —— 全员明细（沿用原有表格，补上类型 / 状态 / 归属） ——
-        React.createElement(
-          "h3",
-          { className: "iicp-team-roster-title" },
-          t("全部成员"),
-          React.createElement("span", null, `${members.length}`),
-        ),
-        React.createElement(
-          "table",
-          { className: "iicp-table" },
-          React.createElement(
-            "thead",
-            null,
-            React.createElement(
-              "tr",
-              null,
-              [t("名称"), t("角色"), t("成员状态"), t("队长"), t("职位"), t("任务"), ""].map((head, index) =>
-                React.createElement("th", { key: index }, head),
+        rosterOpen
+          ? React.createElement(
+              Modal,
+              {
+                key: "member-roster",
+                title: `${t("全部成员")} · ${members.length}`,
+                className: "iicp-roster-modal",
+                onClose: () => setRosterOpen(false),
+                footer: React.createElement(
+                  "button",
+                  { className: "iicp-btn", type: "button", onClick: () => setRosterOpen(false) },
+                  t("关闭"),
+                ),
+              },
+              React.createElement(
+                "div",
+                { className: "iicp-roster-scroll" },
+                React.createElement(
+                  "table",
+                  { className: "iicp-table iicp-roster-table" },
+                  React.createElement(
+                    "thead",
+                    null,
+                    React.createElement(
+                      "tr",
+                      null,
+                      [t("名称"), t("角色"), t("成员状态"), t("队长"), t("职位"), t("任务"), ""].map((head, index) =>
+                        React.createElement("th", { key: index }, head),
+                      ),
+                    ),
+                  ),
+                  React.createElement(
+                    "tbody",
+                    null,
+                    members.length === 0
+                      ? React.createElement("tr", null, React.createElement("td", { colSpan: 7, className: "iicp-empty" }, "—"))
+                      : members.map(memberRow),
+                  ),
+                ),
               ),
-            ),
-          ),
-          React.createElement(
-            "tbody",
-            null,
-            members.length === 0
-              ? React.createElement("tr", null, React.createElement("td", { colSpan: 7, className: "iicp-empty" }, "—"))
-              : members.map(memberRow),
-          ),
-        ),
+            )
+          : null,
 
         reviewEntry
           ? React.createElement(ReviewModal, {
@@ -4140,6 +4301,7 @@ window.__ModuleLoader__.load({
       const [model, setModel] = React.useState(initial?.model || "");
       const [status, setStatus] = React.useState(initial?.status || "idle");
       const [saving, setSaving] = React.useState(false);
+      const { catalog, loading: catalogLoading } = useModelCatalog();
 
       const members = (state?.members || []).filter((m) => !m.archived);
       const currentLead = members.find((m) => m.kind === "lead") || null;
@@ -4147,6 +4309,60 @@ window.__ModuleLoader__.load({
       // no lead yet does the server make this one the lead.
       const kindValue = kind || (initial ? initial.kind || "worker" : currentLead ? "worker" : "lead");
       const leadOptions = members.filter((m) => m.kind === "lead" && m.id !== initial?.id);
+
+      // ---- model directory ----
+      // Empty provider + empty model is the "inherit the workspace" state: the
+      // member follows the Host default selection, which is what a new session
+      // in this workspace would use. The server stores "" for both, so the
+      // stored value keeps tracking the Host instead of freezing today's model.
+      const providers = catalog?.providers || [];
+      const defaultModel = catalog?.defaultModel || null;
+      const catalogAvailable = catalog ? catalog.available !== false : false;
+      const providerModels = (providers.find((row) => row.id === provider) || {}).models || [];
+      // A provider/model that is no longer in the directory must stay visible and
+      // selected: silently rewriting a member's model would hide a broken route.
+      const providerMissing = provider !== "" && !providers.some((row) => row.id === provider);
+      const modelMissing = model !== "" && !providerModels.some((row) => row.id === model);
+      const inheritHint = defaultModel
+        ? `${t("跟随工作区默认模型")} · ${defaultModel.provider}/${defaultModel.model}`
+        : t("跟随工作区默认模型");
+      const modelHint = catalogLoading
+        ? t("正在读取模型目录")
+        : catalogAvailable
+          ? provider === "" && model === ""
+            ? inheritHint
+            : provider !== "" && providerModels.length === 0 && !modelMissing
+              ? t("该提供方没有可用模型")
+              : ""
+          : t("模型目录不可用可手填");
+
+      function changeProvider(next) {
+        setProvider(next);
+        if (next === "") {
+          setModel("");
+          return;
+        }
+        // Keep the model when it still belongs to the chosen provider; otherwise
+        // jump to the Host default for that provider, else its first model.
+        const models = (providers.find((row) => row.id === next) || {}).models || [];
+        if (models.some((row) => row.id === model)) return;
+        const preferred = defaultModel && defaultModel.provider === next ? defaultModel.model : "";
+        if (preferred && models.some((row) => row.id === preferred)) {
+          setModel(preferred);
+          return;
+        }
+        setModel(models[0]?.id || "");
+      }
+
+      function changeModel(next) {
+        setModel(next);
+        // Picking a model without a provider is meaningless: adopt the provider
+        // that owns it so the saved pair is always a real route.
+        if (next !== "" && provider === "") {
+          const owner = providers.find((row) => (row.models || []).some((item) => item.id === next));
+          if (owner) setProvider(owner.id);
+        }
+      }
 
       function splitSkills() {
         return skills
@@ -4262,11 +4478,48 @@ window.__ModuleLoader__.load({
         React.createElement(
           "div",
           { className: "iicp-field-row" },
-          React.createElement(Field, { label: `${t("提供方")}（${t("可选")}）` },
-            React.createElement("input", { value: provider, maxLength: 60, onChange: (e) => setProvider(e.target.value) })),
-          React.createElement(Field, { label: `${t("模型")}（${t("可选")}）` },
-            React.createElement("input", { value: model, maxLength: 60, onChange: (e) => setModel(e.target.value) })),
+          React.createElement(Field, { label: t("提供方") },
+            catalogAvailable
+              ? React.createElement(
+                  "select",
+                  { value: provider, onChange: (e) => changeProvider(e.target.value) },
+                  [
+                    React.createElement("option", { key: "__inherit__", value: "" }, t("继承工作区")),
+                    providerMissing
+                      ? React.createElement("option", { key: "__missing__", value: provider }, `${provider}（${t("当前值不在目录里")}）`)
+                      : null,
+                    ...providers.map((row) =>
+                      React.createElement("option", { key: row.id, value: row.id }, row.name && row.name !== row.id ? `${row.name}（${row.id}）` : row.id)),
+                  ],
+                )
+              : React.createElement("input", {
+                  value: provider,
+                  maxLength: 60,
+                  placeholder: t("可选"),
+                  onChange: (e) => setProvider(e.target.value),
+                })),
+          React.createElement(Field, { label: t("模型") },
+            catalogAvailable
+              ? React.createElement(
+                  "select",
+                  { value: model, onChange: (e) => changeModel(e.target.value) },
+                  [
+                    React.createElement("option", { key: "__inherit__", value: "" }, t("继承工作区")),
+                    modelMissing
+                      ? React.createElement("option", { key: "__missing__", value: model }, `${model}（${t("当前值不在目录里")}）`)
+                      : null,
+                    ...providerModels.map((row) =>
+                      React.createElement("option", { key: row.id, value: row.id }, row.name && row.name !== row.id ? `${row.name}（${row.id}）` : row.id)),
+                  ],
+                )
+              : React.createElement("input", {
+                  value: model,
+                  maxLength: 60,
+                  placeholder: t("可选"),
+                  onChange: (e) => setModel(e.target.value),
+                })),
         ),
+        modelHint ? React.createElement("p", { className: "iicp-team-hint" }, modelHint) : null,
         React.createElement(Field, { label: `${t("联系方式")}（${t("可选")}）` },
           React.createElement("input", { value: contact, maxLength: 80, onChange: (e) => setContact(e.target.value) })),
       );
@@ -4510,7 +4763,7 @@ window.__ModuleLoader__.load({
         React.createElement(
           "div",
           { className: "iicp-header-main" },
-          React.createElement("h1", { className: "iicp-title" }, t("团队看板")),
+          React.createElement("h1", { className: "iicp-title" }, t("一体化智能协作平台")),
           React.createElement(StatLine, { state }),
         ),
         React.createElement(
@@ -4543,13 +4796,6 @@ window.__ModuleLoader__.load({
                 "button",
                 { className: "iicp-btn primary", type: "button", onClick: () => openProjectModal(null) },
                 t("新建项目"),
-              )
-            : null,
-          view === "members"
-            ? React.createElement(
-                "button",
-                { className: "iicp-btn primary", type: "button", onClick: () => openMemberModal(null) },
-                t("新建成员"),
               )
             : null,
         ),
@@ -4713,7 +4959,7 @@ window.__ModuleLoader__.load({
             name: "sidebar.panellist",
             id: PANEL_ID,
             order: 3,
-            label: () => t("团队看板"),
+            label: () => t("一体化智能协作平台"),
             locale: "iicpKanban",
           },
           SidebarKanbanIcon,

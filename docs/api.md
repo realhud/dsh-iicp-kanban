@@ -34,6 +34,23 @@
 ### GET /workspaces
 → `{"ok":true,"workspaces":[...]}`（同 /state.workspaces）
 
+### GET /models（v0.4）
+成员表单的模型目录：从 DSH 活着的 `llm` 服务读「宿主已经配好的 provider + model」，并带上宿主当前默认模型。
+```jsonc
+{ "ok":true, "available":true, "generatedAt":"<ISO>",
+  "defaultModel": { "provider":"deepseek", "model":"deepseek-v4.1-flash" } | null,
+  "providers":[ { "id":"deepseek", "name":"DeepSeek",
+                  "models":[ {"id":"deepseek-v4.1-flash","name":"V4.1 Flash"}, {"id":"x"} ],
+                  "modelCount":2 } ],
+  "providerCount":1, "modelCount":2 }
+```
+
+- **不进 `/state`**：`/state` 被客户端每 8s 轮询一次，把模型目录塞进去会反复触发适配器枚举；客户端只在成员弹窗打开时取一次。
+- **`available:false` 不是 HTTP 错误**：HTTP 恒 200。`llm` 服务未挂载/未就绪时返回 `ok:true, available:false, providers:[], error:{code:"E_RUNTIME_UNAVAILABLE",...}`，客户端退回手填输入框。`listProviders()` 抛错 → `error.code:"E_MODEL_DIRECTORY"`。
+- **单个 provider 枚举失败不隐藏**：该行保留 `models:[]` 并附 `error:"<message>"`，否则成员上已有的 model id 会被静默改写。
+- **`name` 缺省省略**：模型/提供方的显示名与 id 相同时不输出 `name`，客户端回落显示 `id`。
+- **`defaultModel` 可能为 `null`**：宿主没配默认模型、`currentSelection()` 抛错或返回空串时均为 `null`。
+
 ### POST /workspace.update
 `{id, included?:boolean}` → `{"ok":true,"workspace":{...}}`；未知 id → 404。
 
@@ -65,6 +82,7 @@
 - **leadId**：worker 的归属队长。不传时自动挂到现任 lead；显式传 `""` 表示先不归属（orphan）。指向非 lead → 400 `lead not found: X` / `member is not a lead: X`。lead 自身恒为 `""`。
 - **一队一队长**：已有 lead 时再建 lead → `409 conflict`「团队已经有队长（X），请先解除再指定新队长」。新 lead 上任会接管所有 orphan worker。
 - **skills**：数组或字符串数组，单个 ≤20 字，≤8 个，去空**先去重再截断**；**personality** ≤200；**provider/model** ≤60（画像字段，不触发真实 agent spawn，见 architecture.md）。
+- **provider/model 空串 = 继承工作区（v0.4）**：两者都留空表示「跟随宿主当前默认模型」，不是「未配置」。服务端不做白名单校验，允许保留目录里已经消失的历史 id。
 
 ### POST /member.update（v0.3 起含团队字段）
 `{id, name?, title?, contact?, role?, archived?, kind?, leadId?, personality?, skills?, provider?, model?, status?}` → `{"ok":true,"member"}`
@@ -73,6 +91,7 @@
 - **kind 降为 worker（卸任）**：名下 worker 的 `leadId` 清空，成员与任务一律保留。
 - **leadId**：lead 传该字段 → 400「队长不能挂靠到其他成员」。
 - **status**：`idle`/`working`/`blocked`，非法 → 400。worker 的 status 通常由任务派生，手工设置会被下一次 `refreshMemberStatus` 覆盖。
+- **provider/model 改回空串**：显式传 `""` 即把成员切回「继承工作区」。
 
 ### POST /member.delete
 `{id}` → `{"ok":true,"deleted":id}`；级联：其任务 assigneeId→"" + 写任务 history「成员已移除…」；settings.defaultAssigneeId 清空；**若删的是 lead，仅把名下 worker 的 `leadId` 置空（不删成员、不解绑任务）**。

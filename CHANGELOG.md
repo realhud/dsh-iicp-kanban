@@ -2,7 +2,20 @@
 
 ## 未发布
 
-看板、项目、团队三个视图与任务抽屉/弹窗统一换成「深空 HUD」视觉：深海军蓝网格背景、青色全息描边与辉光、深色玻璃列面板/任务卡/项目卡、青蓝渐变主按钮与进度条；状态色统一为待办灰蓝 / 进行中青 / 受阻粉 / 已完成绿，成员状态「空闲 / 工作中 / 受阻中」黄/绿/粉。团队视图保留 `SQUAD STATUS` 总览 + CSS 雷达、四列成员卡与发光连接线，并把队长卡里的四项任务指标抽成左侧「任务总监」面板（`TASK FLOW` 占比条 + 任务总数/已完成），队长卡居中，形成「任务总监 / 队长 / 团队总览」三栏指挥区；`≤840px` 时按队长 → 任务总监 → 团队总览堆叠。响应式：`≤980px` 隐藏工具栏装饰字，`≤760px` 看板列改为 236px 横向滚动。测试 65/65 通过。
+**「新增成员」按钮恢复正常尺寸**：队长卡内的该按钮此前被 `.iicp-team-lead-add .iicp-btn` 的 `flex:1` 拉成全宽、31px 高（v0.3 移入队长卡时的旧设计）；现改为与卡内「编辑」按钮同规格（26px 高、`padding:0 9px`、11px 字号、去掉字距拉伸），不再横向撑满卡片（client.js `.iicp-board .iicp-team-lead-add .iicp-btn`）。
+
+**产品名统一为「一体化智能协作平台」**：侧边栏入口文案（`client.js` 的 `sidebar.panellist` `label`）、主区域页头标题（`.iicp-title`）与 `EN_MESSAGES` 词条（新键 `一体化智能协作平台: "Integrated Collaboration Platform"`）一并改名，不再使用旧名「团队看板」；README / `docs/manual.md` / `docs/ui.md` / `docs/verify.md` / `docs/acceptance-review-2026-11-18.md` 与 `package.json` 的 description 同步统一口径。英文词条改为显式映射，英文界面不会回落显示中文。
+
+看板、项目、团队三个视图与任务抽屉/弹窗统一换成「深空 HUD」视觉：深海军蓝网格背景、青色全息描边与辉光、深色玻璃列面板/任务卡/项目卡、青蓝渐变主按钮与进度条；状态色统一为待办灰蓝 / 进行中青 / 受阻粉 / 已完成绿，成员状态「空闲 / 工作中 / 受阻中」黄/绿/粉。团队视图保留 `SQUAD STATUS` 总览 + CSS 雷达、四列成员卡与发光连接线，并把队长卡里的四项任务指标抽成左侧「任务总监」面板（`TASK FLOW` 占比条 + 任务总数/已完成），队长卡居中，形成「任务总监 / 队长 / 团队总览」三栏指挥区；`≤840px` 时按队长 → 任务总监 → 团队总览堆叠。「新增成员」从顶栏移到队长卡内、原任务指标位置，改为全宽主按钮；「全部成员」明细表改为团队总览右上角按钮打开的 `.iicp-roster-modal` 弹窗（横向可滚动，保留编辑/删除）。响应式：`≤980px` 隐藏工具栏装饰字，`≤760px` 看板列改为 236px 横向滚动。
+
+成员模型的填写方式改为**从宿主已有的模型目录里选**，默认「继承工作区」：
+
+- **新增 `GET /models`**（`server/model-catalog.mjs`）：从 DSH 活着的 `llm` 服务枚举 `listProviders()` + 逐个 `listModels(id)`，并带上 `agentDefaultModel.currentSelection()` 作为宿主默认模型。**不塞进 `/state`**——`/state` 被客户端 8s 轮询，把目录放进去等于每 8 秒枚举一遍适配器；客户端只在打开成员弹窗时取一次。`llm` 未挂载时返回 `ok:true, available:false`（**不是 HTTP 错误**），表单退回手填；单个 provider 枚举失败仍保留该行并附 `error`，否则成员上已有的 model id 会被静默改写。
+- **提供方/模型两个自由文本输入换成 select**：首项空值文案「继承工作区」，副标题随宿主默认模型显示为「跟随工作区默认模型 · provider/model」。选 provider 时若当前 model 仍属于它则保留，否则优先取该 provider 的宿主默认模型、再退首个模型；只选 model 而 provider 为空时自动补上归属 provider，保证存下来的一定是真实路由。
+- **不在目录里的旧值不静默清空**：provider/model 已从宿主目录消失时，下拉里 unshift 一条「`<id>`（当前值不在目录里）」并保持选中——本机存量数据里就有 `deepseek/deepseek-v4.1-flash` 这种目录外历史值。
+- **空串 = 继承工作区，不是「未配置」**：服务端不校验白名单，`""` 原样存；队长卡与工作成员卡副标题在 model/provider 都为空时显示「继承工作区」，否则「继承」和「从没配过」在界面上无法区分。
+- **测试** 65→**73/73**（新增 `tests/model-catalog.test.mjs` 8 例：缺 llm 降级、目录枚举与默认模型、单 provider 失败保留、跳过非法行、`listProviders` 抛错、非法默认选择回落 null、空串往返、显式值更新）；`tests/team.test.mjs` 的 `withService` 增加可选 `ctx` 注入以便驱动假 llm 服务。
+- **文档**：`docs/api.md`（`GET /models` 契约与三条降级语义）、`docs/domain.md`（provider/model 的「空 = 继承」语义）、`docs/ui.md`（成员弹窗字段表与副标题）、`docs/manual.md`（怎么选模型）、`docs/verify.md`（新增 v0.4 验收项）、`docs/architecture.md`（决策 27：为什么单独开接口 + 为什么留空表示继承）。
 
 ## 0.3.0 — 2026-11-18
 

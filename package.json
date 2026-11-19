@@ -1,7 +1,7 @@
 {
   "name": "dsh-iicp-kanban",
-  "version": "0.3.0",
-  "description": "DSH 团队任务看板：看板 + 项目 + 团队成员与任务指派 + AI AGENT 执行语义。 / Team kanban for DSH: board, projects, members, assignment and AI-agent task semantics.",
+  "version": "0.4.0",
+  "description": "DSH 一体化智能协作平台：看板 + 项目 + 团队成员与任务指派 + AI AGENT 执行语义。 / Integrated collaboration platform for DSH: board, projects, members, assignment and AI-agent task semantics.",
   "type": "module",
   "main": "./index.mjs",
   "exports": {

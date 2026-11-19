@@ -39,7 +39,7 @@
 | leadId | **v0.3**：worker 挂靠的队长 id；`""` = 暂无队长（orphan）。lead 自身恒为 `""` |
 | personality | **v0.3**：≤200 字，人格/行事准则（「先问目标再动手」这类） |
 | skills | **v0.3**：string[] ≤8，单个 ≤20 字，去空去重（先去重再截断） |
-| provider / model | **v0.3**：≤60 / ≤60，成员画像里的模型偏好；**不触发真实 spawn**（见 architecture.md） |
+| provider / model | **v0.3**：≤60 / ≤60，成员画像里的模型偏好；**不触发真实 spawn**（见 architecture.md）。**v0.4**：两者同时为 `""` 表示「继承工作区」= 跟随宿主 `agentDefaultModel.currentSelection()`，不是「未配置」；服务端不做白名单校验，宿主目录里已消失的历史 id 原样保留 |
 | status | **v0.3**：`idle` \| `working` \| `blocked`，默认 `idle`。worker 由任务派生（有 blocked→blocked；有 backlog/in_progress→working；否则 idle），lead 可手工设置 |
 | sessionId | **v0.3**：≤200，预留的会话挂靠位（当前不由服务端写入） |
 | title / contact | ≤60 / ≤80 字 |

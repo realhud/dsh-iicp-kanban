@@ -134,7 +134,7 @@ p_f1e2ekpf | 项目模块验收 | due=2026-11-21 | ws=unit | archived=True | not
 **成因**：这份数据写入于工作区解析修复（`server/workspaces.mjs` 改为优先 `tables.workspaces`）之前，旧解析把 `workspace.json` 顶层的 `unit` / `global` / `tables` 当成了工作区，`unit` 被存进项目。修复只改了**读取**侧，没有做数据迁移，`normalizeProject` 对 `workspaceId` 只做字符串类型校验，不校验存在性。
 
 **复现**：
-1. 打开「团队看板」→ 切到「项目」视图；
+1. 打开「一体化智能协作平台」→ 切到「项目」视图；
 2. 展开「已归档项目（1）」→ 对「项目模块验收」点「编辑」；
 3. 「关联工作区」下拉显示为空选中（值 `unit` 不在选项里），而不是 `dsh-iicp-kanban`。
 （本轮为只读取证，未点开该弹窗，属代码推断 + state.json 实证；如需要可以按上述三步在 UI 上确认。）

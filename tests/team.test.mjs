@@ -50,7 +50,7 @@ async function call(service, route, { method = "GET", body } = {}) {
 }
 
 /** Run `fn(service, home)` against a throwaway DSH home. */
-async function withService(fn, { seed } = {}) {
+async function withService(fn, { seed, ctx } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "iicp-kanban-team-"));
   if (seed) {
     fs.mkdirSync(path.join(home, "storages", "iicp-kanban"), { recursive: true });
@@ -59,7 +59,7 @@ async function withService(fn, { seed } = {}) {
   const previous = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
   try {
-    const service = createKanbanService({ ctx: fakeCtx() });
+    const service = createKanbanService({ ctx: ctx || fakeCtx() });
     service.start();
     return await fn(service, home);
   } finally {

@@ -99,9 +99,20 @@ $DSH_HOME/
 
 因此 v0.3 交付的是**可验证的协作契约**（一队一队长、派单、做的人不验收、人工越权记账），全部走本地规则 + 原子写。`provider`/`model`/`sessionId` 作为画像与预留字段保留：真要接 agent 时，形状已经在了，而不必再改数据模型。
 
+## 决策 27：模型目录单独开接口，且「空 = 继承」（v0.4）
+
+成员的 provider/model 从自由文本改为「从 DSH 已有的模型目录里选」。三个决定值得记下来：
+
+1. **目录不进 `/state`，单独 `GET /models`。** 客户端 `useBoardState` 每 8s 轮询一次 `/state`；把 `llm.listProviders()` + 每个 provider 的 `listModels()` 塞进 `/state`，等于每 8 秒把线上适配器枚举一遍。目录只在成员弹窗打开时取一次（`useModelCatalog` 只挂一次 effect），变化频率本来就低。
+2. **服务读取一律惰性 + 双路径。** 本插件的 `apply(ctx)` 只 `ctx.inject(["connection","webServer"])`，没有注入 `llm`/`agentDefaultModel`（它们是后到的服务）；而且 cordis 的 Context 是 Proxy，访问未注入属性会抛。所以 `server/model-catalog.mjs` 的 `resolveService(ctx,name)` 先试 `ctx[name]`（带 try/catch）再退 `ctx.get(name)`，每次请求都重新解析，不在构造期缓存。
+3. **`""` 是「继承工作区」，不是「没填」。** 查过 DSH 全部 338 个 `@deepseek-ai` 包：**没有**「工作区默认模型」这一内建概念——`workspace.json` 的 workspace 对象里也没有任何 model/provider 字段。所以「继承工作区」在本插件里的语义只能是「跟随宿主 `agentDefaultModel.currentSelection()`」，即新开会话会用的那个默认模型。服务端因此**不写死具体 id**、也不做白名单校验：留空才能跟着宿主默认模型一起变；写死反而会在宿主换默认模型后留在一个旧值上。
+
+配套的两个防御：目录里已消失的历史值**保留并回显**（「`<id>`（当前值不在目录里）」），避免把成员的模型静默改名；单个 provider `listModels()` 失败时该行仍保留（`models:[]` + `error`），否则它名下成员的 model id 也会被静默清空。
+
 ## 测试架构
 
 `node --test --test-isolation=none`（沙箱禁 spawn，故禁子进程隔离）；service.test.mjs 用 PassThrough 假 req/res 直调 `service.handle`；`process.env.DSH_HOME` 指向 mkdtemp 临时目录（service.mjs 构造时读取）。
 
 - `tests/team.test.mjs`（v0.3，18 个用例）自带 `withService(fn,{seed})` 夹具，每个用例独立 `DSH_HOME`——因为 service.test.mjs 是全局共享一个 home 的（成员状态会跨用例残留），团队用例需要干净起点。
+- `tests/model-catalog.test.mjs`（v0.4，8 个用例）：用假 `llm`/`agentDefaultModel` 服务驱动 `GET /models`，覆盖缺服务降级、目录枚举、单 provider 失败保留、非法行跳过、`listProviders` 抛错、默认模型回落、空串往返。`withService` 因此支持可选 `ctx` 注入（默认仍是只带 logger 的 `fakeCtx()`）。
 - `scripts/smoke-team.mjs`（v0.3）：端到端 8 步冒烟，末尾打印 `SMOKE-TEAM-PASS`；与 smoke-v2 / smoke-project 一样用 PassThrough 假 req/res，不依赖真 HTTP 服务。
