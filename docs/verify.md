@@ -134,6 +134,21 @@
 - [x] **侧边栏入口渲染**：Ctrl+R 后侧边栏「全局面板」出现「一体化智能协作平台」项（三色柱状图标），9 字完整显示未省略；点击进入后页头标题同为「一体化智能协作平台」。
 - [x] **英文词条**：`EN_MESSAGES` 新键映射 `Integrated Collaboration Platform`，`t()` 在英文界面取词条而非回落中文；旧键「团队看板」已无任何引用。
 
+## 未发布：任务依赖（task-dependencies）
+
+- [x] **代码与自动化**：`node --check client.js`、`node --check server/service.mjs` 通过；`node --test --test-isolation=none "tests/**/*.test.mjs"` → **89 例，88 通过 / 1 失败**（store 13、service 31、team 24）。失败项为 `tests/workspaces.test.mjs:32`「reads the live DSH tables.workspaces registry without leaking other tables」：本机 POSIX 下 `path.basename` 不识别 `C:\Users\dev\default-workspace` 的反斜杠，`git archive HEAD` 到 `/tmp/kanban-head` 复跑同样失败，属既有环境问题，与本次变更无关。
+- [x] **store（新增 3 例）**：`dependsOn` 缺省/非数组/含非字符串 → `[]`；去重保序并 trim、截 8；`migrate` 丢弃悬空 id 与自依赖，同时保留 status/priority/archived。
+- [x] **service（新增 7 例）**：`ready` 派生随前置完成翻转、archived+done 仍算满足、`state.json` 不落 `ready`；自依赖 400 / 引用不存在 400 / 成环 409；菱形依赖放行、跨项目环 409；create 未就绪 `in_progress` 409 且不产生任务、done 放行留痕、前置完成后可开工；update 同请求改 title+deps+status 被 409 时三者都不变，前置完成后同请求成功；move 未就绪 409 列不变、move done 留痕；delete 级联摘除并写 history。
+- [x] **team（新增 4 例）**：dispatch 未就绪 409 且 `assigneeId` 仍为空、status 仍 backlog，前置 done 后可派；report 未就绪仍 200、status 进 in_progress、reviewStatus pending、history 含「提交时前置未完成」与前置标题；成员状态「只有等前置的待办→idle / ready backlog→working / blocked 优先」；`worker.waiting=2`、`team.waiting=2`、`worker.inFlight=3`。
+- [ ] **UI 走查（待桌面取证）**：卡片「等待前置 N」chip；抽屉前置节（状态/跨项目名/「未知前置」空值）；弹窗选择器排除自身与成环候选；拖拽未就绪 toast 且不发生乐观更新、服务端 409 仍回滚；筛选「仅看可开工」；英文词条。
+
+## 未发布：Agent 团队（agent-team）
+
+- [x] **代码与自动化**：`node --check client.js`、`node --check server/*.mjs` 通过；`npm test` **99 例 / 98 通过 / 1 失败**（store 13、auth 7、workspaces 6、service 31、team 24、model-catalog 8、**agents 10**）。唯一失败是既有 `tests/workspaces.test.mjs:32`（POSIX 下 `path.basename` 不识别 `C:\Users\dev\default-workspace`），`git archive HEAD` 复跑同样失败，与本次无关。
+- [x] **tests/agents.test.mjs（假 agents 服务）**：派单建会话（成员 3 工具 / 队长 6 工具、workspace-write、简报含任务字段）；resume 复用映射、失败重建并写 history；无 agents 降级（queued + member unavailable）；同工作区串行、report done 后推进下一张；跨成员同工作区串行；done 30 秒窗口合并唤醒队长；看门狗把超时 running 置 blocked；review changes 重新排队且简报含打回意见；成员工具越权拒绝；队长 `task_create` 原子（priority P9 整批不落库）。
+- [ ] **Spike 真机取证（1.1）**：`agents.create`、setup 内工具注册与首轮可见、permission preset 生效、`/agent/stream` SSE、resume 归档 session 的错误形态。当前只在假 agents 环境验证，需在桌面宿主确认。
+- [ ] **UI 走查（待桌面取证）**：页头「队长」打开抽屉并返回 sessionId；发消息流式回复；「确认执行」触发计划建卡派单；工作成员徽标（执行中 / 排队中 / 会话不可用）；断线后 1 秒轮询兜底；宿主无 agents 时的降级说明；刷新后抽屉可重连。
+
 ## 功能验收（人工走查）
 
 - [x] 新建任务 → 出现在「待办」列，计数徽章 +1。

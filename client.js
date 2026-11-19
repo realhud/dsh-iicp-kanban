@@ -23,6 +23,27 @@ window.__ModuleLoader__.load({
         "en";
 
     const EN_MESSAGES = Object.freeze({
+      队长: "Lead",
+      队长会话: "Lead session",
+      与队长对话: "Chat with the lead",
+      "给队长发消息…": "Message the lead…",
+      发送: "Send",
+      确认执行: "Approve plan",
+      确认执行以上计划: "Approve the plan above and start dispatching",
+      计划: "Plan",
+      执行中: "Running",
+      排队中: "Queued",
+      会话不可用: "Session unavailable",
+      会话: "Session",
+      会话记录: "Session transcript",
+      暂无会话记录: "No session transcript yet. This member has not run a session on any workspace.",
+      加载中: "Loading…",
+      已连接: "Connected",
+      连接中: "Connecting…",
+      重新连接: "Reconnect",
+      队长正在思考: "The lead is working…",
+      AI会话不可用: "The lead session is unavailable: this Host does not expose the agents service. Tasks can still be assigned manually.",
+      "告诉队长要做什么：它会先给计划，确认后再建卡派单。": "Tell the lead what to do: it proposes a plan first and creates cards only after you approve.",
       一体化智能协作平台: "Integrated Collaboration Platform",
       项目: "Projects",
       成员: "Members",
@@ -55,6 +76,20 @@ window.__ModuleLoader__.load({
       验收标准: "Acceptance criteria",
       子任务: "Subtasks",
       添加子任务: "Add a subtask",
+      前置任务: "Prerequisites",
+      等待前置: "Waiting on",
+      仅看可开工: "Ready only",
+      无前置任务: "No prerequisites",
+      "暂无前置任务，随时可以开工": "No prerequisites — ready to start",
+      "选择前置任务…": "Pick a prerequisite…",
+      添加前置: "Add prerequisite",
+      添加: "Add",
+      移除前置: "Remove prerequisite",
+      前置任务未完成: "Prerequisites unfinished",
+      无法开工: "Cannot start yet",
+      未知前置: "Unknown prerequisite",
+      未知项目: "Unknown project",
+      前置: "Prerequisite",
       交付物: "Artifacts",
       标签: "Tags",
       标题: "Title",
@@ -396,6 +431,7 @@ window.__ModuleLoader__.load({
 .iicp-card-metric{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;color:inherit;max-width:96px;overflow:hidden;text-overflow:ellipsis}
 .iicp-card-metric svg{flex:none;display:block}
 .iicp-card-metric.is-done{color:color-mix(in srgb,var(--dsw-alias-state-success-primary,#22c55e) 75%,transparent)}
+.iicp-card-metric.is-waiting{max-width:none;color:color-mix(in srgb,var(--iicp-ink) 58%,transparent)}
 .iicp-card-planning{display:flex;align-items:center;flex-wrap:wrap;gap:5px 10px;font-size:11px;line-height:1.4;color:var(--iicp-ink-2)}
 .iicp-card-planning .iicp-due{flex:none}
 .iicp-card-planning .iicp-due.is-overdue{color:var(--iicp-red);font-weight:500}
@@ -572,6 +608,21 @@ window.__ModuleLoader__.load({
 .iicp-dsub-text{flex:1;min-width:0;overflow-wrap:anywhere}
 .iicp-dsub.done .iicp-dsub-text{color:color-mix(in srgb,var(--iicp-ink) 45%,transparent);text-decoration:line-through}
 .iicp-dsub-src{flex:none;font-size:10px;color:var(--iicp-ink-4);border:0.5px solid var(--iicp-line-soft);border-radius:4px;padding:0 4px}
+/* 前置依赖：抽屉列表 / 弹窗选择器 */
+.iicp-deps{display:flex;flex-direction:column;gap:2px}
+.iicp-dep{display:flex;align-items:center;gap:8px;min-height:26px;font-size:12px;color:color-mix(in srgb,var(--iicp-ink) 78%,transparent)}
+.iicp-dep .iicp-dot{margin-top:0}
+.iicp-dep-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iicp-dep-project{flex:none;font-size:11px;color:var(--iicp-ink-4);max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iicp-dep-state{flex:none;font-size:11px;color:var(--iicp-ink-4)}
+.iicp-dep-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.iicp-dep-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:26px;padding:0 8px;border-radius:6px;background:color-mix(in srgb,var(--iicp-ink) 5%,transparent);font-size:12px}
+.iicp-dep-chip .iicp-dot{margin-top:0}
+.iicp-dep-chip .iicp-dep-title{max-width:180px}
+.iicp-dep-chip button{border:none;background:transparent;color:var(--iicp-ink-3);cursor:pointer;padding:0 2px;font-size:14px;line-height:1}
+.iicp-dep-chip button:hover{color:var(--iicp-ink)}
+.iicp-dep-picker{display:flex;align-items:center;gap:6px}
+.iicp-dep-picker select{flex:1;min-width:0}
 .iicp-dsub-del{flex:none;width:20px;height:20px;display:grid;place-items:center;border:none;border-radius:4px;background:transparent;color:color-mix(in srgb,var(--iicp-ink) 40%,transparent);cursor:pointer;opacity:0;padding:0;font-size:14px}
 .iicp-dsub:hover .iicp-dsub-del{opacity:1}
 .iicp-dsub-del:hover{color:var(--iicp-ink);background:color-mix(in srgb,var(--iicp-ink) 6%,transparent)}
@@ -2071,6 +2122,26 @@ window.__ModuleLoader__.load({
   .iicp-board .iicp-column{flex:0 0 236px;height:100%}
   .iicp-board .iicp-column.is-collapsed{flex:0 0 64px}
 }
+/* —— 队长会话抽屉 —— */
+.iicp-agent-drawer{width:min(460px,94vw)}
+.iicp-agent-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--iicp-ink-3)}
+.iicp-agent-status i{width:6px;height:6px;border-radius:50%;background:var(--iicp-ink-3)}
+.iicp-agent-status.is-online i{background:#22c55e}
+.iicp-agent-status.is-offline i{background:var(--iicp-amber)}
+.iicp-agent-body{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.iicp-agent-msg{max-width:92%;padding:8px 10px;border-radius:10px;border:0.5px solid var(--iicp-line);background:var(--iicp-surface);white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.55}
+.iicp-agent-msg.is-user{align-self:flex-end;background:color-mix(in srgb,var(--iicp-accent) 10%,var(--iicp-surface));border-color:color-mix(in srgb,var(--iicp-accent) 30%,var(--iicp-line))}
+.iicp-agent-msg.is-assistant{align-self:flex-start}
+.iicp-agent-msg.is-pending{color:var(--iicp-ink-3)}
+.iicp-agent-empty{color:var(--iicp-ink-3);font-size:12px;text-align:center;padding:28px 8px}
+.iicp-agent-foot{flex:none;border-top:0.5px solid var(--iicp-line-soft);padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.iicp-agent-input{width:100%;min-height:64px;max-height:160px;resize:vertical;border:0.5px solid var(--iicp-line-strong);border-radius:8px;padding:8px 9px;font-size:12.5px;line-height:1.5;background:var(--iicp-surface);color:var(--iicp-ink)}
+.iicp-agent-actions{display:flex;align-items:center;gap:8px}
+.iicp-agent-actions .iicp-agent-hint{flex:1;min-width:0;font-size:11px;color:var(--iicp-ink-3)}
+.iicp-team-tag.is-agent{background:color-mix(in srgb,#22c55e 14%,transparent);color:#15803d}
+.iicp-team-tag.is-agent-queued{background:color-mix(in srgb,var(--iicp-amber) 14%,transparent);color:#b45309}
+.iicp-team-tag.is-agent-off{background:color-mix(in srgb,var(--iicp-red) 12%,transparent);color:var(--iicp-red)}
+
 /* —— 动效 —— */
 @keyframes iicpHudPulse{0%,100%{opacity:.45}50%{opacity:1}}
 @keyframes iicpHudBreathe{0%,100%{box-shadow:0 0 0 4px rgba(76,230,255,.08),0 0 20px rgba(56,189,248,.40),inset 0 -8px 14px rgba(0,20,50,.35)}50%{box-shadow:0 0 0 7px rgba(76,230,255,.10),0 0 32px rgba(56,189,248,.62),inset 0 -8px 14px rgba(0,20,50,.35)}}
@@ -2208,11 +2279,13 @@ window.__ModuleLoader__.load({
         back: "M8 2.5 4 6.5l4 4M4 6.5h6",
         close: "M3.6 3.6l5.8 5.8M9.4 3.6l-5.8 5.8",
         chevron: "M3.5 5.2 6.5 8.2l3-3",
+        chat: "M2 3.2h9v5.2H6.2L3.4 10.7V8.4H2z",
         next: "M5 2.5l4 4-4 4M9 6.5H3",
         plus: "M6.5 3v7M3 6.5h7",
         more: "M3 6.5h.01M6.5 6.5h.01M10 6.5h.01",
         filter: "M2.5 3.5h8l-3.2 3.6v3.4l-1.6-1V7.1z",
         search: "M6 2.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM8.6 8.6l2 2",
+        wait: "M6.5 2.2a4.3 4.3 0 1 0 0 8.6 4.3 4.3 0 0 0 0-8.6zM6.5 4.2v2.6l1.8 1.1",
       };
       return React.createElement(
         "svg",
@@ -2264,6 +2337,29 @@ window.__ModuleLoader__.load({
       const diff = (pa < 0 ? 9 : pa) - (pb < 0 ? 9 : pb);
       if (diff !== 0) return diff;
       return String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""));
+    }
+
+    /** 未完成的前置任务（缺失 id 视为未完成，但此处只返回仍存在的任务）。 */
+    function blockersOf(task, byId) {
+      return (task?.dependsOn || [])
+        .map((id) => byId.get(id))
+        .filter((dep) => dep && dep.status !== "done");
+    }
+
+    /** 客户端便利检查：把 candidateId 当前置会不会经由依赖链回到 taskId。 */
+    function wouldCreateCycle(taskId, candidateId, byId) {
+      if (!taskId) return false;
+      const stack = [candidateId];
+      const seen = new Set();
+      while (stack.length > 0) {
+        const id = stack.pop();
+        if (id === taskId) return true;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const dep = byId.get(id);
+        for (const next of dep?.dependsOn || []) stack.push(next);
+      }
+      return false;
     }
 
     /** 标签按使用频次排序，用于筛选下拉。 */
@@ -2351,6 +2447,7 @@ window.__ModuleLoader__.load({
       const [originFilter, setOriginFilter] = React.useState("");
       const [tagFilter, setTagFilter] = React.useState("");
       const [showArchived, setShowArchived] = React.useState(false);
+      const [readyOnly, setReadyOnly] = React.useState(false);
       const [filterOpen, setFilterOpen] = React.useState(false);
       const [dragTaskId, setDragTaskId] = React.useState(null);
       const [dragOverColumn, setDragOverColumn] = React.useState(null);
@@ -2398,6 +2495,7 @@ window.__ModuleLoader__.load({
       }, [filterOpen]);
 
       const allTasks = state?.tasks || [];
+      const byId = new Map(allTasks.map((task) => [task.id, task]));
       const visiblePool = allTasks.filter((task) => showArchived || !task.archived);
       // 工作区范围：任务自身带 workspaceId，或归属某个绑定了该工作区的项目。
       const workspaceProjectIds = React.useMemo(() => {
@@ -2432,6 +2530,7 @@ window.__ModuleLoader__.load({
           if (priorityFilter && task.priority !== priorityFilter) return false;
           if (originFilter && (task.origin || "manual") !== originFilter) return false;
           if (tagFilter && !(task.tags || []).includes(tagFilter)) return false;
+          if (readyOnly && task.ready === false) return false;
           return true;
         })
         .sort(compareTasks);
@@ -2443,6 +2542,7 @@ window.__ModuleLoader__.load({
         originFilter,
         tagFilter,
         showArchived ? "1" : "",
+        readyOnly ? "1" : "",
         needle,
       ].filter(Boolean).length;
       const tags = allTags(visiblePool);
@@ -2455,10 +2555,17 @@ window.__ModuleLoader__.load({
         setOriginFilter("");
         setTagFilter("");
         setShowArchived(false);
+        setReadyOnly(false);
       }
 
       function moveTask(task, status) {
         if (!task || task.status === status) return;
+        // 本地预检只是省掉一次注定失败的乐观更新，服务端 409 仍是权威。
+        if (status === "in_progress" && task.ready === false) {
+          const names = blockersOf(task, byId).map((dep) => dep.title);
+          pushToast?.(`${t("无法开工")}：${t("前置任务未完成")}${names.length ? `（${names.join("、")}）` : ""}`);
+          return;
+        }
         setOptimistic((current) => ({ ...current, [task.id]: status }));
         api("/task.move", { method: "POST", body: JSON.stringify({ id: task.id, status }) })
           .then(() => {
@@ -2657,6 +2764,16 @@ window.__ModuleLoader__.load({
                       "button",
                       {
                         type: "button",
+                        className: `iicp-chip${readyOnly ? " on" : ""}`,
+                        "aria-pressed": readyOnly,
+                        onClick: () => setReadyOnly((value) => !value),
+                      },
+                      t("仅看可开工"),
+                    ),
+                    React.createElement(
+                      "button",
+                      {
+                        type: "button",
                         className: `iicp-chip${showArchived ? " on" : ""}`,
                         "aria-pressed": showArchived,
                         onClick: () => setShowArchived((value) => !value),
@@ -2763,6 +2880,7 @@ window.__ModuleLoader__.load({
                           React.createElement(TaskCard, {
                             key: task.id,
                             task,
+                            blockers: blockersOf(task, byId),
                             dragging: dragTaskId === task.id,
                             onDragStart: () => setDragTaskId(task.id),
                             onDragEnd: () => {
@@ -2821,7 +2939,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TaskCard({ task, dragging, onDragStart, onDragEnd, onOpen, onEdit, onMenu }) {
+    function TaskCard({ task, blockers = [], dragging, onDragStart, onDragEnd, onOpen, onEdit, onMenu }) {
       const subtasks = task.subtasks || [];
       const subDone = subtasks.filter((subtask) => subtask.done).length;
       const progress = typeof task.progress === "number" ? task.progress : null;
@@ -2924,6 +3042,17 @@ window.__ModuleLoader__.load({
           React.createElement(
             "span",
             { className: "iicp-card-metrics" },
+            blockers.length > 0 && task.status !== "done"
+              ? React.createElement(
+                  "span",
+                  {
+                    className: "iicp-card-metric is-waiting",
+                    title: `${t("等待前置")}：${blockers.map((dep) => dep.title).join("、")}`,
+                  },
+                  React.createElement(Icon, { name: "wait" }),
+                  `${t("等待前置")} ${blockers.length}`,
+                )
+              : null,
             React.createElement(
               "span",
               { className: `iicp-prio is-${priority.toLowerCase()}`, title: t("优先级") },
@@ -3013,7 +3142,7 @@ window.__ModuleLoader__.load({
       return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
 
-    function TaskDrawer({ task, members, projects, onClose, onEdit }) {
+    function TaskDrawer({ task, members, projects, tasks, onClose, onEdit }) {
       const titleId = `iicp-drawer-title-${task.id}`;
       const goalText = task.goal && typeof task.goal === "object" ? task.goal.text || "" : task.goal || "";
       const subtasks = task.subtasks || [];
@@ -3024,6 +3153,8 @@ window.__ModuleLoader__.load({
       const priority = task.priority || "P2";
       const member = members.find((item) => item.id === task.assigneeId);
       const project = projects.find((item) => item.id === task.projectId);
+      const taskById = new Map((tasks || []).map((item) => [item.id, item]));
+      const dependsOn = (task.dependsOn || []).map((id) => taskById.get(id));
       const today = new Date().toISOString().slice(0, 10);
       const overdue = Boolean(task.dueDate) && task.dueDate < today && task.status !== "done";
       const latestHistory = [...history].reverse();
@@ -3143,6 +3274,56 @@ window.__ModuleLoader__.load({
                 overviewItem(t("标签"), (task.tags || []).map((tag) => `#${tag}`).join("  ")),
                 overviewItem(t("备注"), task.notes, "wide"),
               ),
+            ),
+            // 前置任务
+            React.createElement(
+              "div",
+              { className: "iicp-drawer-sec" },
+              React.createElement(
+                "div",
+                { className: "iicp-drawer-sec-head" },
+                React.createElement("span", { className: "iicp-drawer-sec-title" }, t("前置任务")),
+                React.createElement("span", { className: "iicp-drawer-sec-count" }, String(dependsOn.length)),
+              ),
+              dependsOn.length === 0
+                ? React.createElement("div", { className: "iicp-note-tiny" }, t("暂无前置任务，随时可以开工"))
+                : React.createElement(
+                    "div",
+                    { className: "iicp-deps" },
+                    dependsOn.map((dep, index) => {
+                      if (!dep) {
+                        return React.createElement(
+                          "div",
+                          { key: `missing-${index}`, className: "iicp-dep" },
+                          React.createElement("span", { className: "iicp-dot is-backlog" }),
+                          React.createElement("span", { className: "iicp-dep-title" }, t("未知前置")),
+                        );
+                      }
+                      // 跨项目时才显示项目名；同项目内再标一次只是噪音。
+                      const depProject =
+                        dep.projectId && dep.projectId !== task.projectId
+                          ? projects.find((item) => item.id === dep.projectId)
+                          : null;
+                      return React.createElement(
+                        "div",
+                        { key: dep.id, className: "iicp-dep" },
+                        React.createElement("span", { className: `iicp-dot is-${dep.status}` }),
+                        React.createElement("span", { className: "iicp-dep-title", title: dep.title }, dep.title),
+                        depProject
+                          ? React.createElement(
+                              "span",
+                              { className: "iicp-dep-project" },
+                              depProject.name || t("未知项目"),
+                            )
+                          : null,
+                        React.createElement(
+                          "span",
+                          { className: "iicp-dep-state" },
+                          t(STATUS_LABELS[dep.status] || dep.status),
+                        ),
+                      );
+                    }),
+                  ),
             ),
             // 子任务
             React.createElement(
@@ -3392,6 +3573,7 @@ window.__ModuleLoader__.load({
       const [dispatchFor, setDispatchFor] = React.useState(null);
       const [reviewEntry, setReviewEntry] = React.useState(null);
       const [rosterOpen, setRosterOpen] = React.useState(false);
+      const [transcriptFor, setTranscriptFor] = React.useState(null);
 
       const workload = React.useMemo(() => {
         const map = new Map();
@@ -3418,6 +3600,19 @@ window.__ModuleLoader__.load({
       const donePct = tasks.length
         ? Math.round((taskFlow.find((item) => item.status === "done")?.count || 0) / tasks.length * 100)
         : 0;
+
+      // Agent session badge: unavailable > running > queued. Derived from the
+      // live task rows so it needs no extra endpoint.
+      const agentBadge = (member) => {
+        if (member.kind !== "worker") return null;
+        if (member.agentState === "unavailable")
+          return React.createElement("span", { className: "iicp-team-tag is-agent-off" }, t("会话不可用"));
+        if (tasks.some((task) => task.assigneeId === member.id && task.agentState === "running"))
+          return React.createElement("span", { className: "iicp-team-tag is-agent" }, t("执行中"));
+        if (tasks.some((task) => task.assigneeId === member.id && task.agentState === "queued"))
+          return React.createElement("span", { className: "iicp-team-tag is-agent-queued" }, t("排队中"));
+        return null;
+      };
 
       const memberRow = (member) =>
         React.createElement(
@@ -3765,6 +3960,7 @@ window.__ModuleLoader__.load({
                         worker.awaitingReview
                           ? React.createElement("span", { className: "iicp-team-tag is-review" }, `${t("待验收")} ${worker.awaitingReview}`)
                           : React.createElement(MemberStatusTag, { member: worker }),
+                        agentBadge(worker),
                       ),
                       worker.skills?.length
                         ? React.createElement(
@@ -3784,6 +3980,7 @@ window.__ModuleLoader__.load({
                         "div",
                         { className: "iicp-team-card-actions" },
                         React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => setDispatchFor(worker) }, t("派单")),
+                        React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => setTranscriptFor(worker) }, t("会话")),
                         React.createElement("button", { className: "iicp-btn", type: "button", onClick: () => openMemberModal(worker) }, t("编辑")),
                       ),
                     ),
@@ -3853,6 +4050,13 @@ window.__ModuleLoader__.load({
               onClose: () => setDispatchFor(null),
               reload,
               pushToast,
+            })
+          : null,
+        transcriptFor
+          ? React.createElement(TranscriptModal, {
+              key: transcriptFor.id,
+              member: transcriptFor,
+              onClose: () => setTranscriptFor(null),
             })
           : null,
       );
@@ -4047,6 +4251,8 @@ window.__ModuleLoader__.load({
         (initial?.subtasks || []).map((subtask) => ({ ...subtask })),
       );
       const [newSubtask, setNewSubtask] = React.useState("");
+      const [dependsOn, setDependsOn] = React.useState((initial?.dependsOn || []).slice());
+      const [depPicker, setDepPicker] = React.useState("");
       const [artifacts, setArtifacts] = React.useState(
         (initial?.artifacts || []).map((artifact) => ({ ...artifact })),
       );
@@ -4055,6 +4261,20 @@ window.__ModuleLoader__.load({
       const members = (state?.members || []).filter((m) => !m.archived);
       const projects = (state?.projects || []).filter((p) => !p.archived);
       const subtasksLocked = (initial?.lockedFields || []).includes("subtasks");
+      const taskById = new Map((state?.tasks || []).map((task) => [task.id, task]));
+      const depCandidates = (state?.tasks || [])
+        .filter((task) => task.id !== initial?.id)
+        .filter((task) => !dependsOn.includes(task.id))
+        .filter((task) => !wouldCreateCycle(initial?.id, task.id, taskById));
+
+      function addDependency() {
+        if (!depPicker) return;
+        setDependsOn((list) => (list.includes(depPicker) ? list : [...list, depPicker].slice(0, 8)));
+        setDepPicker("");
+      }
+      function removeDependency(id) {
+        setDependsOn((list) => list.filter((item) => item !== id));
+      }
 
       function toggleSubtask(index) {
         setSubtasks((list) => list.map((item, i) => (i === index ? { ...item, done: !item.done } : item)));
@@ -4093,6 +4313,7 @@ window.__ModuleLoader__.load({
             assigneeId,
             projectId,
             tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
+            dependsOn,
             subtasks,
             artifacts,
           };
@@ -4194,6 +4415,62 @@ window.__ModuleLoader__.load({
                 ),
               ),
             )),
+        ),
+        React.createElement(
+          Field,
+          { label: `${t("前置任务")}（${dependsOn.length}/8）` },
+          dependsOn.length === 0
+            ? React.createElement("div", { className: "iicp-note-tiny" }, t("暂无前置任务，随时可以开工"))
+            : React.createElement(
+                "div",
+                { className: "iicp-dep-chips" },
+                dependsOn.map((id) => {
+                  const dep = taskById.get(id);
+                  return React.createElement(
+                    "span",
+                    { key: id, className: "iicp-dep-chip", title: dep?.title || t("未知前置") },
+                    React.createElement("span", { className: `iicp-dot is-${dep?.status || "backlog"}` }),
+                    React.createElement("span", { className: "iicp-dep-title" }, dep?.title || id),
+                    dep
+                      ? React.createElement(
+                          "span",
+                          { className: "iicp-dep-state" },
+                          t(STATUS_LABELS[dep.status] || dep.status),
+                        )
+                      : null,
+                    React.createElement(
+                      "button",
+                      { type: "button", title: t("移除前置"), "aria-label": t("移除前置"), onClick: () => removeDependency(id) },
+                      "×",
+                    ),
+                  );
+                }),
+              ),
+          React.createElement(
+            "div",
+            { className: "iicp-dep-picker" },
+            React.createElement(
+              "select",
+              {
+                value: depPicker,
+                onChange: (event) => setDepPicker(event.target.value),
+                disabled: dependsOn.length >= 8,
+              },
+              React.createElement("option", { value: "" }, t("选择前置任务…")),
+              depCandidates.map((task) =>
+                React.createElement(
+                  "option",
+                  { key: task.id, value: task.id },
+                  `${task.title}（${t(STATUS_LABELS[task.status] || task.status)}）`,
+                ),
+              ),
+            ),
+            React.createElement(
+              "button",
+              { type: "button", className: "iicp-btn", disabled: !depPicker || dependsOn.length >= 8, onClick: addDependency },
+              t("添加"),
+            ),
+          ),
         ),
         React.createElement(
           Field,
@@ -4653,6 +4930,327 @@ window.__ModuleLoader__.load({
       );
     }
 
+
+    /* ---------------- lead agent drawer ---------------- */
+    /**
+     * 队长会话：与队长 agent 的对话框。SSE 推增量，断线后退回 1 秒轮询
+     * transcript（design D11）。计划闸门由服务端提示词约束，这里提供
+     * 「确认执行」快捷句，避免用户手动输入确认语。
+     */
+    /** 成员会话记录（只读）：取该成员最近一次映射的 sessionId。 */
+    function TranscriptModal({ member, onClose }) {
+      const sessionIds = Object.values(member.sessions || {}).filter(Boolean);
+      const sessionId = sessionIds.length ? sessionIds[sessionIds.length - 1] : "";
+      const [entries, setEntries] = React.useState(null);
+      const [error, setError] = React.useState("");
+      React.useEffect(() => {
+        if (!sessionId) {
+          setEntries([]);
+          return undefined;
+        }
+        let alive = true;
+        api(`/agent/transcript?sessionId=${encodeURIComponent(sessionId)}`)
+          .then((payload) => {
+            if (alive) setEntries(Array.isArray(payload.transcript) ? payload.transcript : []);
+          })
+          .catch((cause) => {
+            if (alive) {
+              setError(String(cause?.message || cause));
+              setEntries([]);
+            }
+          });
+        return () => {
+          alive = false;
+        };
+      }, [sessionId]);
+
+      return React.createElement(
+        Modal,
+        {
+          title: `${t("会话记录")} · ${member.name}`,
+          className: "iicp-roster-modal",
+          onClose,
+          footer: React.createElement("button", { className: "iicp-btn", type: "button", onClick: onClose }, t("关闭")),
+        },
+        React.createElement(
+          "div",
+          { className: "iicp-agent-body", style: { maxHeight: "58vh" } },
+          entries === null
+            ? React.createElement("p", { className: "iicp-agent-empty" }, t("加载中"))
+            : entries.length === 0
+              ? React.createElement("p", { className: "iicp-agent-empty" }, error || t("暂无会话记录"))
+              : entries.map((entry, index) =>
+                  React.createElement("div", { key: index, className: `iicp-agent-msg is-${entry.role}` }, entry.text),
+                ),
+        ),
+      );
+    }
+
+    function AgentDrawer({ onClose, pushToast }) {
+      const [sessionId, setSessionId] = React.useState("");
+      const [available, setAvailable] = React.useState(null);
+      const [messages, setMessages] = React.useState([]);
+      const [draft, setDraft] = React.useState("");
+      const [sending, setSending] = React.useState(false);
+      const [streaming, setStreaming] = React.useState(false);
+      const [online, setOnline] = React.useState("connecting");
+      const [error, setError] = React.useState("");
+      const listRef = React.useRef(null);
+      const sessionRef = React.useRef("");
+
+      React.useEffect(() => {
+        const el = listRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, [messages, streaming]);
+
+      const applyTranscript = React.useCallback((entries) => {
+        setMessages(
+          (Array.isArray(entries) ? entries : []).map((entry) => ({
+            role: entry.role === "user" ? "user" : "assistant",
+            text: String(entry.text || ""),
+          })),
+        );
+      }, []);
+
+      React.useEffect(() => {
+        let alive = true;
+        api("/agent/lead", { method: "POST", body: "{}" })
+          .then((payload) => {
+            if (!alive) return;
+            setAvailable(payload.available !== false);
+            if (payload.available === false) {
+              setOnline("offline");
+              return;
+            }
+            setSessionId(payload.sessionId);
+            sessionRef.current = payload.sessionId;
+            if (Array.isArray(payload.transcript)) applyTranscript(payload.transcript);
+            setOnline("online");
+          })
+          .catch((cause) => {
+            if (!alive) return;
+            setAvailable(false);
+            setOnline("offline");
+            setError(String(cause?.message || cause));
+          });
+        return () => {
+          alive = false;
+        };
+      }, [applyTranscript]);
+
+      React.useEffect(() => {
+        if (!sessionId) return undefined;
+        let source = null;
+        let poll = null;
+        let disposed = false;
+        const startPoll = () => {
+          if (poll !== null) return;
+          setOnline("offline");
+          poll = setInterval(() => {
+            api(`/agent/transcript?sessionId=${encodeURIComponent(sessionRef.current)}`)
+              .then((payload) => {
+                if (!disposed && Array.isArray(payload.transcript)) applyTranscript(payload.transcript);
+              })
+              .catch(() => {});
+          }, 1000);
+        };
+        try {
+          source = new EventSource(`${API_PREFIX}/agent/stream?sessionId=${encodeURIComponent(sessionId)}`);
+          source.onmessage = (event) => {
+            let frame;
+            try {
+              frame = JSON.parse(event.data);
+            } catch {
+              return;
+            }
+            if (!frame || typeof frame !== "object") return;
+            if (frame.type === "ready") {
+              setOnline("online");
+              return;
+            }
+            if (frame.type === "user") {
+              setMessages((current) => {
+                const last = current[current.length - 1];
+                if (last && last.role === "user" && last.text === frame.text) return current;
+                return [...current, { role: "user", text: String(frame.text || "") }];
+              });
+              return;
+            }
+            if (frame.type === "assistant-start") {
+              setStreaming(true);
+              setMessages((current) => [...current, { role: "assistant", text: "", pending: true }]);
+              return;
+            }
+            if (frame.type === "chunk") {
+              setMessages((current) => {
+                const next = current.slice();
+                const last = next[next.length - 1];
+                if (last && last.role === "assistant") {
+                  next[next.length - 1] = { ...last, text: last.text + String(frame.text || ""), pending: true };
+                } else {
+                  next.push({ role: "assistant", text: String(frame.text || ""), pending: true });
+                }
+                return next;
+              });
+              return;
+            }
+            if (frame.type === "assistant-end") {
+              setStreaming(false);
+              setMessages((current) => {
+                const next = current.slice();
+                const last = next[next.length - 1];
+                if (last && last.role === "assistant") next[next.length - 1] = { ...last, pending: false };
+                return next;
+              });
+            }
+          };
+          source.onerror = () => {
+            try {
+              source?.close();
+            } catch {
+              /* already closed */
+            }
+            source = null;
+            startPoll();
+          };
+        } catch {
+          startPoll();
+        }
+        return () => {
+          disposed = true;
+          try {
+            source?.close();
+          } catch {
+            /* already closed */
+          }
+          if (poll !== null) clearInterval(poll);
+        };
+      }, [sessionId, applyTranscript]);
+
+      const send = (text) => {
+        const value = String(text ?? "").trim();
+        if (!value || sending || !sessionId) return;
+        setSending(true);
+        setDraft("");
+        api("/agent/message", { method: "POST", body: JSON.stringify({ sessionId, text: value }) })
+          .then(() => {
+            setError("");
+            setMessages((current) => {
+              const last = current[current.length - 1];
+              if (last && last.role === "user" && last.text === value) return current;
+              return [...current, { role: "user", text: value }];
+            });
+          })
+          .catch((cause) => {
+            const message = String(cause?.message || cause);
+            setError(message);
+            pushToast?.(message);
+          })
+          .finally(() => setSending(false));
+      };
+
+      const hasAssistant = messages.some((message) => message.role === "assistant" && message.text);
+      const statusClass = online === "online" ? "is-online" : online === "offline" ? "is-offline" : "";
+      const statusLabel = online === "online" ? t("已连接") : online === "offline" ? t("重新连接") : t("连接中");
+
+      return React.createElement(
+        "aside",
+        { className: "iicp-drawer iicp-agent-drawer", role: "dialog", "aria-label": t("队长会话") },
+        React.createElement(
+          "header",
+          { className: "iicp-drawer-head" },
+          React.createElement(
+            "div",
+            { className: "iicp-drawer-head-text" },
+            React.createElement("span", { className: "iicp-drawer-kicker" }, "IICP AGENT"),
+            React.createElement("h2", { className: "iicp-drawer-title" }, t("与队长对话")),
+            React.createElement(
+              "span",
+              { className: `iicp-agent-status ${statusClass}` },
+              React.createElement("i", { "aria-hidden": "true" }),
+              statusLabel,
+            ),
+          ),
+          React.createElement(
+            "button",
+            { className: "iicp-icon-btn", type: "button", onClick: onClose, "aria-label": t("关闭") },
+            React.createElement(Icon, { name: "close", size: 12 }),
+          ),
+        ),
+        React.createElement(
+          "div",
+          { className: "iicp-agent-body", ref: listRef },
+          available === false
+            ? React.createElement("p", { className: "iicp-agent-empty" }, t("AI会话不可用"))
+            : messages.length === 0
+              ? React.createElement(
+                  "p",
+                  { className: "iicp-agent-empty" },
+                  t("告诉队长要做什么：它会先给计划，确认后再建卡派单。"),
+                )
+              : messages.map((message, index) =>
+                  React.createElement(
+                    "div",
+                    {
+                      key: index,
+                      className: `iicp-agent-msg is-${message.role}${message.pending ? " is-pending" : ""}`,
+                    },
+                    message.text || (message.pending ? "…" : ""),
+                  ),
+                ),
+        ),
+        React.createElement(
+          "div",
+          { className: "iicp-agent-foot" },
+          error ? React.createElement("p", { className: "iicp-agent-empty" }, error) : null,
+          React.createElement("textarea", {
+            className: "iicp-agent-input",
+            value: draft,
+            placeholder: t("给队长发消息…"),
+            "aria-label": t("给队长发消息…"),
+            onChange: (event) => setDraft(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send(draft);
+              }
+            },
+          }),
+          React.createElement(
+            "div",
+            { className: "iicp-agent-actions" },
+            React.createElement(
+              "span",
+              { className: "iicp-agent-hint" },
+              streaming ? t("队长正在思考") : sending ? t("发送") : "",
+            ),
+            hasAssistant
+              ? React.createElement(
+                  "button",
+                  {
+                    className: "iicp-btn",
+                    type: "button",
+                    disabled: streaming || sending,
+                    onClick: () => send(t("确认执行以上计划")),
+                  },
+                  t("确认执行"),
+                )
+              : null,
+            React.createElement(
+              "button",
+              {
+                className: "iicp-btn primary",
+                type: "button",
+                disabled: !sessionId || sending || !draft.trim(),
+                onClick: () => send(draft),
+              },
+              t("发送"),
+            ),
+          ),
+        ),
+      );
+    }
+
     function PageTeamBoard(props) {
       const { state, error, reload } = useBoardState();
       const [view, setView] = React.useState("board");
@@ -4663,6 +5261,7 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState("");
       const [toasts, setToasts] = React.useState([]);
       const [scope, setScope] = React.useState(null);
+      const [agentOpen, setAgentOpen] = React.useState(false);
       const searchRef = React.useRef(null);
       const toastSeq = React.useRef(0);
 
@@ -4710,6 +5309,10 @@ window.__ModuleLoader__.load({
               setDrawerTaskId(null);
               return;
             }
+            if (agentOpen) {
+              setAgentOpen(false);
+              return;
+            }
             if (query) setQuery("");
             return;
           }
@@ -4726,7 +5329,7 @@ window.__ModuleLoader__.load({
         }
         document.addEventListener("keydown", onKeyDown, true);
         return () => document.removeEventListener("keydown", onKeyDown, true);
-      }, [taskModal, drawerTaskId, query]);
+      }, [taskModal, drawerTaskId, agentOpen, query]);
 
       const busy = !state && !error;
 
@@ -4742,6 +5345,17 @@ window.__ModuleLoader__.load({
         React.createElement(
           "div",
           { className: "iicp-header-actions" },
+          React.createElement(
+            "button",
+            {
+              className: "iicp-btn",
+              type: "button",
+              onClick: () => setAgentOpen(true),
+              title: t("与队长对话"),
+            },
+            React.createElement(Icon, { name: "chat", size: 12 }),
+            t("队长"),
+          ),
           view === "board"
             ? React.createElement(
                 "label",
@@ -4844,12 +5458,16 @@ window.__ModuleLoader__.load({
               task: drawerTask,
               members: (state?.members || []).filter((m) => !m.archived),
               projects: (state?.projects || []).filter((p) => !p.archived),
+              tasks: state?.tasks || [],
               onClose: () => setDrawerTaskId(null),
               onEdit: (task) => {
                 setDrawerTaskId(null);
                 openTaskModal(task);
               },
             })
+          : null,
+        agentOpen
+          ? React.createElement(AgentDrawer, { onClose: () => setAgentOpen(false), pushToast })
           : null,
         taskModal
           ? React.createElement(TaskModal, {

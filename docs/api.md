@@ -1,5 +1,6 @@
 # dsh-iicp-kanban 接口契约（api）
 
+> 未发布（agent-team）：新增 `POST /agent/lead`、`GET /agent/transcript`、`POST /agent/message`、`GET /agent/stream`；成员/任务多出会话与队列字段。
 > v0.3：成员模块升级为「队长 + 工作成员」，新增 `GET /team`、`POST /member.dispatch|report|review`，`member.*` 增加团队字段。
 
 所有路由挂在 DSH webServer，前缀 `/iicp-kanban/api`，owner-only（非 owner → `403 {"ok":false,"error":"unauthorized"}`）。除 /ping /state /workspaces /member.workload /team 为 GET 外，其余均为 POST，请求体为 JSON 对象（数组/缺体/非法 JSON → 400）。
@@ -20,16 +21,59 @@
 全量看板状态（客户端 8s 轮询）。→
 ```jsonc
 { "ok":true, "generatedAt":"<ISO>",
-  "tasks":[ { ...Task, "assigneeName":"", "projectName":"" } ],
+  "tasks":[ { ...Task, "assigneeName":"", "projectName":"", "ready":true } ],
   "members":[...Member], "projects":[...Project],
   "workspaces":[ {id,title,path,source,included,sessionCount,lastActivityAt} ],
   "settings":{ "defaultAssigneeId":"", "showArchived":false },
-  "team":{ "lead":..., "workers":[...], "pendingReviews":[...], ... },
+  "team":{ "lead":..., "workers":[...], "pendingReviews":[...], "waiting":0, ... },
   "stats":{ "total":0, "archived":0,
             "byStatus":{"backlog":0,"in_progress":0,"blocked":0,"done":0},
             "assigned":0, "unassigned":0, "members":0, "projects":0 } }
 ```
-`team` 字段（v0.3）结构见下方 `GET /team`。
+`team` 字段（v0.3）结构见下方 `GET /team`。`task.ready`（未发布）是派生值：`dependsOn` 全部为 `done` 时为 `true`（无前置也是 `true`），缺失的前置按未完成算；不落盘。
+
+### 任务依赖（未发布）
+
+- 依赖方向：`task.dependsOn` 存「本任务依赖哪些任务」，上限 8，去重保序。
+- 开工判定：任何把 `status` 写成 `in_progress` 的请求，在前置未全部 `done` 时返回 `409 conflict`，message 形如「前置任务未完成：A（进行中）、B（待办）」。被拒请求不修改任何字段。
+- 守卫只作用于「进入 in_progress」：已处于 in_progress 的任务新增/回退前置不改状态。
+- `dependsOn` 自依赖或引用不存在 → 400；成环 → 409（「任务依赖成环：A → B → A」）。
+- 删除任务时从其它任务的 `dependsOn` 摘除，并写该任务 history。
+
+### Agent 会话（未发布）
+
+队长与成员各跑一个真实 DSH agent 会话；看板只负责建会话、投简报、收汇报，不代理模型调用。
+
+#### POST /agent/lead
+`{}` → `{"ok":true,"available":true,"memberId":"m_x","sessionId":"s_x","rebuilt":false,"transcript":[{"role":"user|assistant","text":"...","at":"<ISO>"}]}`
+
+- 确保队长在默认工作区的会话：先 resume，失败则重建（`rebuilt:true`）。
+- 宿主没有 `agents` 服务 → HTTP 200、`available:false`、`sessionId:""`、`transcript:[]`（降级，不是错误）。
+
+#### GET /agent/transcript?sessionId=s_x
+→ `{"ok":true,"sessionId":"s_x","transcript":[...]}`。优先读 `agent.session.log`（user/message + assistant/message），最多 80 条；会话不在本进程 → 404。
+
+#### POST /agent/message
+`{sessionId, text}` → `{"ok":true}`。投递用户消息（`agent.followup`）；会话不存在 → 404；投递失败 → 409。空文本 → 400。
+
+#### GET /agent/stream?sessionId=s_x
+Server-Sent Events（`text/event-stream`）。首帧 `{"type":"ready"}`，随后转发：
+
+| 帧 | 含义 |
+| --- | --- |
+| `{"type":"user","text":"..."}` | 用户消息回显 |
+| `{"type":"assistant-start"}` | 助手开始输出 |
+| `{"type":"chunk","text":"..."}` | 流式增量（拼接） |
+| `{"type":"assistant-end"}` | 本轮结束 |
+| `{"type":"status","status":"idle|running"}` | 会话状态 |
+
+每 15 秒写一行注释保活；客户端断开即退订。SSE 不可用时客户端退回 1 秒轮询 `/agent/transcript`。
+
+#### 派单、汇报与验收的 agent 字段
+
+- `/member.dispatch` 返回追加 `agent:{available:boolean,state:""|"queued"|"running"}`；`agents` 缺失或建/恢复失败时仍 200（降级人工），任务 `agentState="queued"`、成员 `agentState="unavailable"`。
+- `/member.report` 支持三态：`status:"progress"`（只记进展）、`"blocked"`（置 blocked）、`"done"`（置 pending 验收）；**缺省 `status` 仍是旧语义 `done`**。done/blocked 清 `agentState` 并唤醒队长（30 秒按成员合并）。
+- `/member.review` 的 `changes` 分支把任务重新置 `queued`，由队列在会话空闲时补投简报（含「打回意见」），保持同工作区串行。
 
 ### GET /workspaces
 → `{"ok":true,"workspaces":[...]}`（同 /state.workspaces）
@@ -105,11 +149,12 @@
 ```jsonc
 { "ok":true, "team":{
   "lead": { ...Member, "workerCount":0 },
-  "workers": [ { ...Member, "taskTotal":0, "inFlight":0, "blocked":0, "awaitingReview":0, "orphan":false } ],
+  "workers": [ { ...Member, "taskTotal":0, "inFlight":0, "blocked":0, "awaitingReview":0, "waiting":0, "orphan":false } ],
   "pendingReviews": [ {"taskId","title","assigneeId","assigneeName","note","updatedAt"} ],
-  "unassigned": 0, "blocked": 0, "inFlight": 0, "orphanWorkers": 0,
+  "unassigned": 0, "blocked": 0, "inFlight": 0, "waiting": 0, "orphanWorkers": 0,
   "generatedAt": "<ISO>" } }
 ```
+`waiting`（未发布）：已指派、仍为 `backlog`、未就绪（`ready:false`）的任务数；`workers[].waiting` 为按人统计，`team.waiting` 为汇总。`inFlight` 口径不变（已指派未完成）。
 `lead` 恒非空：成员表为空时服务端启动即种子默认队长（名称「队长」、`kind:"lead"`、`role:"owner"`、画像字段空串），v0.2.7 老数据（有成员无 lead）启动时提升最早成员为队长。`workers[].orphan` 与 `orphanWorkers` 字段保留，但正常安装下恒为 0（队长不可删除/卸任）。
 `/state` 的响应体末尾同样带 `team` 字段（结构一致），客户端 8s 轮询即可拿到团队视图。
 
@@ -117,6 +162,7 @@
 `{taskId, memberId, leadId?}` → `{"ok":true,"task","member"}`
 
 - 派单 = 指派 + 认领一步完成：`assigneeId=worker.id`；`backlog → in_progress`（其它状态不动）；清空旧的 `reviewStatus`/`reviewNote`；写 `kind:"assignee"` history「派单：X 认领」。
+- **未就绪守卫（未发布）**：`backlog` 任务的前置未全部完成 → `409 conflict`，且**不写 `assigneeId`**；已 `in_progress` 的任务重派不受此守卫影响。
 - 未知任务 → 404；未知成员 → 400 `assignee not found: X`；`leadId` 指向非 lead → 400。
 - 派单后实时刷新该 worker 的 `status`（→ `working`）。
 
@@ -126,6 +172,7 @@
 - **做的人不验收**：worker 只能提交，`reviewStatus → "pending"`，**状态列仍是 in_progress**（不会自己变 done）。
 - 任务已属他人 → 400「任务属于 X，Y 无法回报」；已处于 pending → `409 conflict`「该任务已提交验收，等待队长处理」。
 - `blocked`/`backlog` 会自动回到 `in_progress`；`subtasks`/`artifacts` 传了就按 v2 规则整体覆盖并重算 progress。
+- **汇报不受前置阻塞（未发布）**：未就绪也接受提交，额外写一条 `kind:"dependency"` history「提交时前置未完成：…」。
 - 写 `kind:"review"` history「X 提交验收：note」。
 
 ### POST /member.review（v0.3）
@@ -137,32 +184,35 @@
 - **changes**：`reviewStatus="changes"`、`status="in_progress"`、history「X 要求返工」。
 
 ### POST /task.create（v2）
-`{title(必填), goal?, acceptanceCriteria?, notes?, dueDate?, status?="backlog", priority?="P2", tags?, workspaceId?, projectId?, assigneeId?, origin?="manual", sourceSessionId?, subtasks?, artifacts?, lockedFields?}` → `{"ok":true,"task"}`
+`{title(必填), goal?, acceptanceCriteria?, notes?, dueDate?, status?="backlog", priority?="P2", tags?, workspaceId?, projectId?, assigneeId?, origin?="manual", sourceSessionId?, subtasks?, artifacts?, lockedFields?, dependsOn?}` → `{"ok":true,"task"}`
 
 - **goal**：字符串（旧客户端）自动迁移为 `{text,status,source:"task"}`；或直接传对象 `{text ≤280, status?∈active/done/none, source?∈session/task}`（agent 传 `source:"session"`）。
 - **acceptanceCriteria** ≤600：验收标准。
 - **subtasks** ≤12：元素为 `{text ≤60, done?, source?∈ai/todo/manual}` 或字符串（迁移为 manual）；无效条目丢弃；返回时带服务端生成的 `id`。
 - **artifacts** ≤10：`{name?, path ≤260, kind?∈deliverable/modified, time?}` 或字符串路径（name 自动取文件名）。
-- **lockedFields**：仅接受 `LOCKABLE_FIELDS = [title,goal,status,progress,priority,tags,notes,subtasks,artifacts]` 内的值。
+- **lockedFields**：仅接受 `LOCKABLE_FIELDS = [title,goal,status,progress,priority,tags,notes,subtasks,artifacts,dependsOn]` 内的值。
+- **dependsOn**（未发布）：前置任务 id 数组（≤8，去重保序）；自依赖/不存在 400，成环 409。`status="in_progress"` 且前置未完成 → 409，任务不创建。`status="done"` 放行，但 history 记「越权完成：前置 … 未完成」。
 - **origin/sourceSessionId**：agent 会话挂靠（origin="session" + 会话 id ≤200）。
 - 返回的 task 带 `progress`（有 subtasks 时=done 比例，否则 done→100/backlog 未设→0）与 `pinned`（默认 `false`）。
 - **v0.3 验收字段**：新建任务恒为 `reviewStatus:"none"`、`reviewNote:""`（由 `/member.report`、`/member.review` 驱动）。
-- 引用不存在 → 400；history 追加 `{kind:"create",note:"创建任务"}`。
+- 返回的 task 带 `ready`（派生，不落盘）。引用不存在 → 400；history 追加 `{kind:"create",note:"创建任务"}`。
 
 ### POST /task.update（v2）
-`{id, title?, goal?, acceptanceCriteria?, notes?, dueDate?, status?, priority?, tags?, projectId?, assigneeId?, archived?, pinned?, subtasks?, artifacts?, lockedFields?}` → `{"ok":true,"task","changed":boolean}`
+`{id, title?, goal?, acceptanceCriteria?, notes?, dueDate?, status?, priority?, tags?, dependsOn?, projectId?, assigneeId?, archived?, pinned?, subtasks?, artifacts?, lockedFields?}` → `{"ok":true,"task","changed":boolean}`
 
 - goal 支持字符串（整体迁移）或**部分对象**（与现有 goal 合并后归一化）。
 - **status→done 联动**：goal.status→"done"；非 manual 且 subtasks 未锁定的未完成子任务自动置 done（写一条 `kind:"subtask"` history「任务完成，自动关闭 N 个生成子任务」）；progress 重算。
 - **v0.3 人工越权**：owner 直接把 worker 的任务改成 done，视同验收（`reviewStatus→"accepted"`、`reviewNote="人工直接完成（视同验收）"`，见 service.mjs `settleReviewOnStatus`）；状态离开 done 时 pending/accepted 会被清回 `none`。
 - **v0.3 改派清验收**：`assigneeId` 变更时清空 `reviewStatus`/`reviewNote`，旧结论不跟着新负责人走。
+- **dependsOn（未发布）**：整体覆盖（空数组即清空）；校验同 create。同一请求同时改 `dependsOn` 与 `status` 时，先归一化并校验新依赖，再按新依赖判就绪；被 409 拒绝时所有字段都不写入。`dependsOn` 变更写 `kind:"dependency"` history（「前置更新：A、B」/「前置已清空」）。
+- **未就绪不可开工（未发布）**：`status→in_progress` 且前置未完成 → 409；`status→done` 放行并记越权 history。
 - subtasks/artifacts 更新后 progress 自动重算（v2 contract）。
 - **pinned（v2.5）**：布尔置顶标记；`pinned` 与现值不同时写 `kind:"pin"` history（「置顶任务」/「取消置顶」）并计入 `changed`；相同值不写盘。看板排序 `compareTasks` 先按 pinned 降序，再按优先级、最后按 `updatedAt` 降序。
 - 有 diff 才写盘；status 变更写 `kind:"status"`（from/to），指派变更写 `kind:"assignee"`（note「指派：X → Y」），归档写 `kind:"archive"`；其余 diff 合并一条 `kind:"edit"`。
 ### POST /task.delete
-`{id}` → `{"ok":true,"deleted":id}`（物理删除）。
+`{id}` → `{"ok":true,"deleted":id}`（物理删除）。**级联（未发布）**：从其它任务的 `dependsOn` 摘除该 id，刷新其 `updatedAt` 并写 history「前置任务已删除：X」。
 ### POST /task.move（v2）
-`{id, status}` → `{"ok":true,"task"}`（看板拖拽专用；同状态幂等返回，不写历史）。status 非法 → 400；id 不存在 → 404。**→ done 的联动语义与 /task.update 相同**（goal/progress/自动关闭生成子任务）。
+`{id, status}` → `{"ok":true,"task"}`（看板拖拽专用；同状态幂等返回，不写历史）。status 非法 → 400；id 不存在 → 404。**未就绪拖入 in_progress → 409**（未发布）；**→ done 的联动语义与 /task.update 相同**（goal/progress/自动关闭生成子任务），未完成前置时记越权 history。
 
 ## 错误码速查
 
@@ -175,6 +225,8 @@
 | 工作区绑定冲突 / 乐观锁冲突（v2.7） | 409 | conflict |
 | 重复队长（v0.3） | 409 | conflict |
 | 重复提交验收 / 无待验收任务（v0.3） | 409 | conflict |
+| 前置未完成却开工 / 依赖成环（未发布） | 409 | conflict |
+| 会话不存在 / 消息投递失败（未发布） | 404 / 409 | not-found / conflict |
 | 验收人=完成人、成员非队长、leadId 悬空（v0.3） | 400 | invalid-input |
 | 删除/卸任队长（v0.5） | 400 | invalid-input |
 | 无匹配路由 | 404 | not-found（message: `no route: GET /x`） |

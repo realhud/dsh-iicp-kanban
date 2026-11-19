@@ -194,3 +194,49 @@ test("v2 task keeps goal/subtasks/artifacts/progress through roundtrip", () => {
   assert.equal(task.artifacts[0].path, "docs/a.md");
   assert.deepEqual(task.lockedFields, ["subtasks"]);
 });
+
+test("dependsOn defaults to [] and keeps only unique string ids", () => {
+  const state = migrate({
+    tasks: [
+      { id: "t_a", title: "A" },
+      { id: "t_b", title: "B", dependsOn: "t_a" },
+      { id: "t_c", title: "C", dependsOn: ["t_a", 7, "  ", "t_a", " t_b "] },
+    ],
+  });
+  assert.deepEqual(state.tasks[0].dependsOn, []);
+  assert.deepEqual(state.tasks[1].dependsOn, []);
+  assert.deepEqual(state.tasks[2].dependsOn, ["t_a", "t_b"]);
+});
+
+test("dependsOn is capped at 8 entries", () => {
+  const ids = Array.from({ length: 12 }, (_, index) => `t_${index}`);
+  const state = migrate({
+    tasks: [
+      ...ids.map((id) => ({ id, title: id })),
+      { id: "t_a", title: "A", dependsOn: ids },
+    ],
+  });
+  const task = state.tasks.find((item) => item.id === "t_a");
+  assert.deepEqual(task.dependsOn, ids.slice(0, 8));
+});
+
+test("migrate drops dangling and self prerequisite ids but keeps task state", () => {
+  const state = migrate({
+    tasks: [
+      {
+        id: "t_a",
+        title: "A",
+        status: "in_progress",
+        priority: "P1",
+        dependsOn: ["t_b", "t_missing", "t_a", "t_b"],
+        archived: false,
+      },
+      { id: "t_b", title: "B", status: "done", dependsOn: ["t_missing"], archived: true },
+    ],
+  });
+  assert.deepEqual(state.tasks[0].dependsOn, ["t_b"]);
+  assert.deepEqual(state.tasks[1].dependsOn, []);
+  assert.equal(state.tasks[0].status, "in_progress");
+  assert.equal(state.tasks[0].priority, "P1");
+  assert.equal(state.tasks[1].archived, true);
+});

@@ -6,11 +6,13 @@
  */
 
 export {
+  AGENT_TASK_STATES,
   ARTIFACT_KINDS,
   GOAL_SOURCES,
   GOAL_STATUSES,
   LIST_LIMITS,
   LOCKABLE_FIELDS,
+  MEMBER_AGENT_STATES,
   MEMBER_KINDS,
   MEMBER_ROLES,
   MEMBER_STATUSES,
@@ -21,6 +23,8 @@ export {
   TASK_SOURCES,
   TEXT_LIMITS,
   clip,
+  isAgentTaskState,
+  isMemberAgentState,
   isMemberKind,
   isMemberRole,
   isMemberStatus,
@@ -29,6 +33,7 @@ export {
   isStatus,
   normalizeArtifact,
   normalizeDateOnly,
+  normalizeDependsOn,
   normalizeGoal,
   normalizeSubtask,
 } from "./limits.mjs";

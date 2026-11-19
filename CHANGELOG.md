@@ -2,6 +2,31 @@
 
 ## 未发布
 
+**队长与成员各跑真实 agent 会话（breaking）**：团队从「本地协作契约」变成真正执行——队长与每个工作成员在各自工作区拥有 DSH agent 会话，派单即投递任务简报，成员汇报、队长验收；`provider`/`model` 不再只是画像字段，而是真实的路由参数，v0.3「不接 agents」的边界（架构决策 20）被决策 30 取代——
+
+- **会话映射**：`Member.sessions` 按工作区存 `{workspaceId: sessionId}`（成员 × 工作区唯一，≤4 LRU）；队长用默认工作区（第一个带 path 的 included 工作区），成员用任务所属工作区（`task.workspaceId` → 项目 `workspaceId`）。创建走 `agents.create`（cwd=工作区路径、`agentOptions` 用成员 provider/model、空则继承、权限 `workspace-write`、不设 `parentSession`）；重启先 `agents.resume`，失败则重建并写 history「会话已重建，重新投递简报」。
+- **角色工具**：队长 6 个（`board_read`/`member_list`/`task_create`/`task_update`/`dispatch`/`review`），成员 3 个（`task_get`/`report`/`artifact_add`）；工具在 setup 里按成员角色注册、随会话销毁回滚。**工具处理函数校验 assignee 才是权限边界**——成员只能读写自己的任务，越权调用直接拒绝。
+- **计划闸门**：队长先给计划，用户确认后才批量建卡派单；`task_create` 1–30 张原子提交，任一字段非法整批不落库；`origin:"session"` + `sourceSessionId` + history 审计。
+- **执行队列**：`Task.agentState`（`""|queued|running`）；派单写 `running` 或 `queued`（同工作区、同成员已在跑则排队），`pumpAgents` 按 updatedAt 推进；任务离开 `in_progress` 即清空，看门狗 30 分钟无更新把 `running` 置「受阻」并唤醒队长。
+- **汇报与验收**：`report` 三态 progress/blocked/done；done 只挂「待验收」，blocked 立即唤醒队长；验收通过 → done，要求返工 → 退回 in_progress 并把打回意见补投给原成员重新排队。人工拖拽/改派/直接完成始终优先。
+- **唤醒与降级**：done/blocked 事件按成员 30 秒窗口合并，唤醒队长会话；宿主未提供 `agents` 服务时进入降级——任务照常排队、`Member.agentState="unavailable"`，API 返回 `available:false`，人工派单/汇报不受影响。
+- **接口**：`POST /agent/lead`、`GET /agent/transcript?sessionId=`、`POST /agent/message`、`GET /agent/stream`（SSE：ready/user/assistant-start/chunk/assistant-end/status，15s 保活）；派单返回 `agent:{available,state}`。
+- **客户端**：页头「队长」按钮 + 右侧会话抽屉（流式回复、确认执行、断线 1 秒轮询兜底、无 agents 降级说明）；工作成员卡片新增「执行中 / 排队中 / 会话不可用」徽标。
+- **测试** 89→**99 例（98 通过，1 例为本机既有 path.basename 环境失败）**，新增 `tests/agents.test.mjs` 10 例（会话创建/恢复/降级、串行队列、唤醒合并、看门狗、打回补投、工具越权、批量原子）。
+- **文档**：`docs/domain.md`、`docs/api.md`、`docs/architecture.md`（决策 30）、`docs/manual.md`、`docs/ui.md`、`docs/verify.md`。
+
+**任务依赖：前置未完成不可开工，就绪只派生（breaking）**：任务之间第一次有正式关系——依赖方用 `dependsOn` 指向前置任务，未就绪的任务不能进入「进行中」——
+
+- **数据模型**：`Task.dependsOn: string[]`（≤8，去重保序，依赖方存）；只能指向存在的任务，自依赖/引用不存在 → 400，成环 → 409（message 形如「任务依赖成环：A → B → A」）。`dependsOn` 进入 `LOCKABLE_FIELDS`；history 新增 `kind:"dependency"`。
+- **就绪派生**：`ready = dependsOn.every(id => 任务存在且 status==="done")`，不落盘，`/state` 现算；归档不参与判定（已完成+已归档算满足）。前置完成不自动流转依赖方状态。
+- **开工守卫**：`create/update/move/dispatch` 四个入口在写入 `in_progress` 前统一过 `assertStartable`，未就绪 → 409「前置任务未完成：A（进行中）、B（待办）」，且不修改任何字段（dispatch 守卫先于写 `assigneeId`；update 同请求改依赖+状态时先校验新依赖）。`report` 是例外：未就绪也接受提交，history 记「提交时前置未完成」。
+- **人工越权优先**：任何入口 → done 都放行，有未完成前置时 history 记「越权完成：前置 … 未完成」；已开工任务新增/回退前置不回退状态。
+- **图完整性**：删除任务级联从其它任务摘除并写 history；`project.delete` 只解绑 projectId，依赖跨项目存活；迁移静默丢弃悬空 id 与自引用，不升 `STATE_VERSION`（旧版本回滚会在下次保存丢弃 dependsOn）。
+- **成员与团队**：worker 的 `working` 收紧为「有 in_progress 或 ready 的 backlog」；`/team` 的 workers 与 team 新增 `waiting`（已指派、仍 backlog、未就绪），`inFlight` 口径不变。
+- **客户端**：卡片「等待前置 N」chip、抽屉「前置任务」节（跨项目名/未知前置）、弹窗前置选择器（排除自身与成环候选）、拖拽前本地预检 + 409 回滚 toast、筛选「仅看可开工」。
+- **测试** 75→**89 例（88 通过，1 例为本机既有 path.basename 环境失败）**（store +3、service +7、team +4）。
+- **文档**：`docs/domain.md`、`docs/api.md`、`docs/architecture.md`（决策 29）、`docs/manual.md`、`docs/ui.md`、`docs/verify.md`。
+
 **队长恒定：不可删除、不可卸任，空队自动种子（breaking）**：队长从「可换的职务」变为团队的恒定角色，换队长路径整体关闭——
 
 - **服务端守卫**：`/member.delete` 删 lead → `400`「队长不可被删除」；`/member.update` lead→worker（卸任）→ `400`「队长不可被卸任」。两个操作从「无破坏换人」变为领域不变量违例（`server/service.mjs`；取代 v0.3 决策 24 的「删队长不级联删工人 / 卸任不连坐」语义）。队长资料字段（名称/职位/人格/技能/模型等）仍可正常编辑；worker→lead 晋升与建队长的 409 挡板保持不变。

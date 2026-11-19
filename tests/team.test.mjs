@@ -467,3 +467,101 @@ test("legacy tasks default to reviewStatus none", async () => {
     },
   );
 });
+
+async function createTask(service, body) {
+  const { status, json } = await call(service, "/task.create", { method: "POST", body });
+  assert.equal(status, 200, json.message);
+  return json.task;
+}
+
+test("dispatching an unready task is rejected before assignment", async () => {
+  await withService(async (service) => {
+    const { workerId } = await seedTeam(service);
+    const dep = await createTask(service, { title: "前置" });
+    const task = await createTask(service, { title: "待派", dependsOn: [dep.id] });
+
+    const blocked = await call(service, "/member.dispatch", {
+      method: "POST",
+      body: { taskId: task.id, memberId: workerId },
+    });
+    assert.equal(blocked.status, 409);
+
+    const state = await call(service, "/state");
+    const current = state.json.tasks.find((item) => item.id === task.id);
+    assert.equal(current.assigneeId, "");
+    assert.equal(current.status, "backlog");
+
+    await call(service, "/task.update", { method: "POST", body: { id: dep.id, status: "done" } });
+    const ok = await call(service, "/member.dispatch", {
+      method: "POST",
+      body: { taskId: task.id, memberId: workerId },
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.task.status, "in_progress");
+  });
+});
+
+test("report still submits an unready task and records the pending prerequisites", async () => {
+  await withService(async (service) => {
+    const { workerId } = await seedTeam(service);
+    const dep = await createTask(service, { title: "前置" });
+    const task = await createTask(service, {
+      title: "回报",
+      dependsOn: [dep.id],
+      assigneeId: workerId,
+    });
+
+    const reported = await call(service, "/member.report", {
+      method: "POST",
+      body: { taskId: task.id, memberId: workerId, note: "先交了" },
+    });
+    assert.equal(reported.status, 200);
+    assert.equal(reported.json.task.status, "in_progress");
+    assert.equal(reported.json.task.reviewStatus, "pending");
+    assert.ok(
+      reported.json.task.history.some(
+        (entry) => entry.note.includes("提交时前置未完成") && entry.note.includes("前置"),
+      ),
+    );
+  });
+});
+
+test("member status counts only in_progress or ready backlog as working", async () => {
+  await withService(async (service) => {
+    const { workerId } = await seedTeam(service);
+    const dep = await createTask(service, { title: "前置" });
+    const waiting = await createTask(service, {
+      title: "等待",
+      dependsOn: [dep.id],
+      assigneeId: workerId,
+    });
+    assert.ok(waiting.id);
+
+    let state = await call(service, "/state");
+    assert.equal(state.json.members.find((member) => member.id === workerId).status, "idle");
+
+    const ready = await createTask(service, { title: "可开工", assigneeId: workerId });
+    state = await call(service, "/state");
+    assert.equal(state.json.members.find((member) => member.id === workerId).status, "working");
+
+    await call(service, "/task.update", { method: "POST", body: { id: ready.id, status: "blocked" } });
+    state = await call(service, "/state");
+    assert.equal(state.json.members.find((member) => member.id === workerId).status, "blocked");
+  });
+});
+
+test("team payload reports waiting work per worker and in total", async () => {
+  await withService(async (service) => {
+    const { workerId } = await seedTeam(service);
+    const dep = await createTask(service, { title: "前置" });
+    await createTask(service, { title: "等一", dependsOn: [dep.id], assigneeId: workerId });
+    await createTask(service, { title: "等二", dependsOn: [dep.id], assigneeId: workerId });
+    await createTask(service, { title: "可以开", assigneeId: workerId });
+
+    const team = await call(service, "/team");
+    const worker = team.json.team.workers.find((member) => member.id === workerId);
+    assert.equal(worker.waiting, 2);
+    assert.equal(worker.inFlight, 3);
+    assert.equal(team.json.team.waiting, 2);
+  });
+});

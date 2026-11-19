@@ -15,6 +15,10 @@ export const MEMBER_KINDS = ["lead", "worker"];
 export const MEMBER_STATUSES = ["idle", "working", "blocked"];
 /** Acceptance gate: work done by someone else must be reviewed by the lead. */
 export const REVIEW_STATUSES = ["none", "pending", "accepted", "changes"];
+/** Execution queue state of a dispatched task ("" means not queued). */
+export const AGENT_TASK_STATES = ["queued", "running"];
+/** Why a member has no live agent session; "" means the host is usable. */
+export const MEMBER_AGENT_STATES = ["unavailable"];
 
 /** goal.status follows task.status (super-kanban semantics). */
 export const GOAL_STATUSES = ["active", "done", "none"];
@@ -35,6 +39,7 @@ export const LOCKABLE_FIELDS = [
   "notes",
   "subtasks",
   "artifacts",
+  "dependsOn",
 ];
 
 export const TEXT_LIMITS = Object.freeze({
@@ -50,6 +55,7 @@ export const TEXT_LIMITS = Object.freeze({
   memberModel: 60,
   memberSkill: 20,
   memberSessionId: 200,
+  agentSessionId: 200,
   taskTitle: 80,
   taskGoal: 280,
   taskAcceptance: 600,
@@ -67,6 +73,8 @@ export const LIST_LIMITS = Object.freeze({
   historyPerTask: 20,
   subtasksPerTask: 12,
   artifactsPerTask: 10,
+  dependsOnPerTask: 8,
+  sessionsPerMember: 4,
   skillsPerMember: 8,
 });
 
@@ -94,6 +102,14 @@ export function isMemberStatus(value) {
 
 export function isReviewStatus(value) {
   return REVIEW_STATUSES.includes(value);
+}
+
+export function isAgentTaskState(value) {
+  return value === "" || AGENT_TASK_STATES.includes(value);
+}
+
+export function isMemberAgentState(value) {
+  return value === "" || MEMBER_AGENT_STATES.includes(value);
 }
 
 /** Clip a text field to a max length; non-strings become "". */
@@ -148,6 +164,22 @@ export function normalizeSubtask(value, index) {
   }
   if (!text) return null;
   return { id: id || `s_${index + 1}`, text, done, source };
+}
+
+/** Normalize prerequisite ids: strings only, deduped, capped, order kept. */
+export function normalizeDependsOn(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= LIST_LIMITS.dependsOnPerTask) break;
+  }
+  return out;
 }
 
 /** Normalize one artifact entry (deliverable path from an agent run). */

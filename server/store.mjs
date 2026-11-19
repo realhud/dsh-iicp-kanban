@@ -19,8 +19,11 @@ import {
   STATUSES,
   TEXT_LIMITS,
   clip,
+  isAgentTaskState,
+  isMemberAgentState,
   normalizeArtifact,
   normalizeDateOnly,
+  normalizeDependsOn,
   normalizeGoal,
   normalizeSubtask,
 } from "./limits.mjs";
@@ -140,6 +143,13 @@ export function migrate(raw) {
   if (Array.isArray(raw.projects)) state.projects = raw.projects.map(normalizeProject).filter(Boolean);
   if (Array.isArray(raw.members)) state.members = raw.members.map(normalizeMember).filter(Boolean);
   if (Array.isArray(raw.tasks)) state.tasks = raw.tasks.map(normalizeTask).filter(Boolean);
+  // Prerequisite edges are only meaningful inside the live task set. Drop
+  // dangling/self references (old or hand-edited state) instead of failing load.
+  const taskIds = new Set(state.tasks.map((task) => task.id));
+  for (const task of state.tasks) {
+    const kept = task.dependsOn.filter((id) => id !== task.id && taskIds.has(id));
+    if (kept.length !== task.dependsOn.length) task.dependsOn = kept;
+  }
   if (raw.settings && typeof raw.settings === "object") {
     const allowed = new Set(Object.keys(base.settings));
     for (const key of Object.keys(raw.settings)) {
@@ -184,6 +194,21 @@ function normalizeProject(raw) {
   return project.id && project.name ? project : null;
 }
 
+/** Per-workspace session ids, cap enforced by dropping the oldest entries. */
+function normalizeSessions(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [workspaceId, sessionId] of Object.entries(raw)) {
+    const key = clip(workspaceId, 120);
+    const value = clip(sessionId, TEXT_LIMITS.memberSessionId);
+    if (!key || !value) continue;
+    out[key] = value;
+  }
+  const entries = Object.entries(out);
+  if (entries.length <= LIST_LIMITS.sessionsPerMember) return out;
+  return Object.fromEntries(entries.slice(-LIST_LIMITS.sessionsPerMember));
+}
+
 function normalizeMember(raw) {
   if (!raw || typeof raw !== "object") return null;
   const role = MEMBER_ROLES.includes(raw.role) ? raw.role : "member";
@@ -211,6 +236,8 @@ function normalizeMember(raw) {
     model: clip(raw.model, TEXT_LIMITS.memberModel),
     status,
     sessionId: clip(raw.sessionId, TEXT_LIMITS.memberSessionId),
+    sessions: normalizeSessions(raw.sessions),
+    agentState: isMemberAgentState(raw.agentState) ? raw.agentState : "",
     archived: raw.archived === true,
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
@@ -237,6 +264,11 @@ function normalizeTask(raw) {
     workspaceId: typeof raw.workspaceId === "string" ? raw.workspaceId : "",
     projectId: typeof raw.projectId === "string" ? raw.projectId : "",
     assigneeId: typeof raw.assigneeId === "string" ? raw.assigneeId : "",
+    dependsOn: normalizeDependsOn(raw.dependsOn),
+    agentSessionId: clip(raw.agentSessionId, TEXT_LIMITS.agentSessionId),
+    // Queue state only exists while the task is in flight; a stale value from a
+    // crash would otherwise make the workspace look busy forever.
+    agentState: isAgentTaskState(raw.agentState) && status === "in_progress" ? raw.agentState : "",
     origin: raw.origin === "session" ? "session" : "manual",
     sourceSessionId: typeof raw.sourceSessionId === "string" ? raw.sourceSessionId : "",
     pinned: raw.pinned === true,

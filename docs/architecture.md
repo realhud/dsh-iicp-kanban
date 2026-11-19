@@ -59,7 +59,7 @@
 
 ## 数据流（一次拖拽 / 一次派单验收）
 
-**拖拽改状态**：TaskCard dragstart 记 taskId → 列 onDrop → POST `/task.move {id,status}` → dispatch 校验 isStatus → 改 state + addHistory("status") + store.save()（原子写）→ 客户端 reload() → 全量 `/state` 重渲染。
+**拖拽改状态**：TaskCard dragstart 记 taskId → 列 onDrop → POST `/task.move {id,status}` → dispatch 校验 isStatus → （未发布）拖入 in_progress 先过 `assertStartable`，未就绪 409 → 改 state + addHistory("status") + store.save()（原子写）→ 客户端 reload() → 全量 `/state` 重渲染。客户端在发起前用 `task.ready` 做一次本地预检，但 409 分支仍需回滚 + toast。
 
 **派单 → 提交 → 验收（v0.3）**：
 ```
@@ -85,7 +85,9 @@ $DSH_HOME/
 
 `state.json` 在 v0.3 里：`members[]` 多出 `kind/leadId/personality/skills/provider/model/status/sessionId`，`tasks[]` 多出 `reviewStatus/reviewNote`。没有新增顶层集合，也没有新增文件——`settleTeam()` 在 `start()` 时一次性把老数据补齐（缺 kind → worker，无 lead → 提升最早成员），所以升级不需要手工迁移。
 
-## 为什么不做真实 spawn（v0.3 的边界）
+## 为什么 v0.3 不做真实 spawn（已由决策 30 取代，保留作历史）
+
+> 下面这张表记录 v0.3 的边界。未发布（agent-team）起，前三项已被绕过或解除：不设 `parentSession` 就绕开归档连坐；workspace-write 由 setup 显式钉住；句柄由插件 `stop()` 统一 dispose。后两项用「只信工具处理函数 + 看门狗」兜住。
 
 查证过 `@deepseek-ai/dsh-agent` / `@deepseek-ai/dsh-subagent` 的类型契约与本机 `dsh-ai-team` 的实现后，这次**有意不接 agent 服务**：
 
@@ -120,6 +122,35 @@ v0.3 把「换队长」设计成两步无破坏操作（决策 24），但实际
 
 代价是 breaking：依赖「删队长重建」的自动化需改为直接编辑队长资料。收益是 Member 从「可能出现无头状态」变成恒定不变量「每队恰一名队长」（domain.md 不变量 11）。
 
+## 决策 29：任务依赖用依赖方的 dependsOn，就绪只派生（未发布）
+
+任务之间第一次出现关系。核心取舍：
+
+1. **依赖边存在依赖方**：`task.dependsOn: string[]`（≤8），不建独立 edges 集合，不引入 `blocks[]`，不复用父子层级或 `blocked` 列。独立集合要在每次 `/state` 做 join 并处理孤儿边；`blocks[]` 是同一关系的反向冗余，双写必然漂移；`blocked` 会派生成员状态与团队 attention，把「正常等待」误报成「异常受阻」。
+2. **`ready` 不落盘**：由 `dependsOn` 与当前状态现算，挂在 `/state` 的 task 上。落盘会引入「前置完成了但忘了刷新依赖方」的缓存失效问题；单文件 state 的规模下现算成本可忽略。归档不参与判定——已完成+已归档算满足，已归档未完成不算。
+3. **守卫单点、先于修改**：`assertStartable` 只判「nextStatus === in_progress 且存在未完成前置」，create/update/move/dispatch 四个入口调用。update 采用两阶段（先归一化并校验依赖，再改字段）；dispatch 把守卫放在写 `assigneeId` 之前——否则 409 会把未保存的脏内存态留给下一次 `store.save()`。report 是唯一例外：人已经在干活，拦提交只会让看板撒谎，改为放行 + history 留痕。
+4. **格式错与状态冲突分开**：自依赖/悬空引用是请求本身非法 → 400；成环与「前置未完成」是当前图状态冲突 → 409。客户端据此决定「改表单」还是「刷新后重试」。
+5. **人工越权优先**（延续决策 22）：任何入口 → done 都放行，只在 history 记「越权完成：前置 A 未完成」。前置完成也不自动把依赖方推成 in_progress——状态仍是人的决定。
+6. **图完整性靠写路径 + 迁移双保险**：写路径拒绝自依赖/环（DFS 显式栈，路径用于报错）；删除任务级联摘除并写 history；`project.delete` 只解绑 projectId，依赖跨项目存活；迁移做一次全局 pass 丢弃悬空 id 与自引用（静默，不写 history）。
+7. **成员状态收紧**：`working` 从「有 backlog 就算忙」改为「有 in_progress 或 ready 的 backlog」，否则「等前置」会被误报成在忙，队长无法据此派活；team 新增 `waiting` 汇总，`inFlight` 保持旧口径避免破坏消费者。
+8. **客户端只是便利层**：拖拽前本地预检省掉注定失败的乐观更新，但 409 的 toast + 回滚仍必须实现；弹窗的成环过滤同样是便利，服务端权威。筛选是 BoardView 瞬时状态，不持久化（延续决策 10）。
+9. **排序不变**：等待任务不特殊排序，否则前置完成时列表会跳动。
+
+**回滚代价**：旧版本读含 `dependsOn` 的 state 会忽略该字段（`normalizeTask` 丢弃未知字段），下次保存即永久丢失依赖关系。没有升 `STATE_VERSION`，因为字段是可选增量。
+
+## 决策 30：队长与成员各跑真实 agent 会话（未发布）
+
+1. **根会话，不挂 subagent 树**：`agents.create` 的 `meta` 全可选，因此不传 `parentSession`。成员不是队长的子会话：避免 archived-session-gate 沿父链连坐，也让每个成员可独立重启、独立销毁。`cwd` 固定为工作区路径，创建后不可改（工作区换了就换会话）。
+2. **一会话一成员×工作区**：`Member.sessions` 存 `{workspaceId: sessionId}`，最多 4 个 LRU。先 `resume`，失败再 `create` 新 id 并标 `rebuilt`，同时写 history「会话已重建，重新投递简报」。会话不跨工作区复用——cwd 固化，跨区复用等于让 agent 在别人的目录里干活。
+3. **工具是权限边界，不是提示词**：setup 里按角色注册工具，处理函数从闭包拿 `memberId` 并校验 `assigneeId`，不信任模型传参。队长 6 个、成员 3 个；成员侧没有建卡/派单/验收工具。提示词只负责流程（计划闸门、做完必须 report），越权由处理函数拒绝。
+4. **双队列落在任务上**：`Task.agentState` = `""|queued|running`，工作区与成员各自串行。不建进程内队列：队列必须跨重启可重建，且人工拖拽/删除任务后要能立刻重排。`pumpAgents` 每次按 `updatedAt` 挑可运行任务，重启时把「已指派 in_progress 但非 running」置 queued 再泵。
+5. **复用既有状态机**：成员 `report` 仍走 `/member.report` 的 pending 语义（done 不改状态列），队长 `review` 仍走 accepted/changes。agent 只是把「谁在什么时候点了按钮」换成了模型调用；人工拖 done 仍然优先（决策 22）。
+6. **唤醒合并、可观测**：done/blocked 才唤醒队长，按成员 30 秒窗口合并成一条【事件】；progress 不唤醒。看门狗 30 分钟（`IICP_AGENT_TIMEOUT_MS`）把失联的 running 置 blocked 并记 history——宁可误报受阻，也不让工作区永久忙。
+7. **降级是一等状态**：`agents` 缺失不是启动错误。派单照常写 assignee，任务 queued、成员 `agentState="unavailable"`、接口返回 `agent.available=false`；人工照旧可拖拽/验收。插件不把 `agents` 放进 `ctx.inject`，因为 cordis 的 inject 没有可选依赖，缺服务会连插件一起不加载。
+8. **生命周期跟插件走**：`start()` 恢复队列并起 60 秒 tick；`stop()` 清定时器、清待唤醒、dispose 所有句柄。删除成员先 dispose 再解绑任务。
+9. **SSE 只是加速层**：`/agent/stream` 经 `webServer.register` 的 Node `req/res` 写 `text/event-stream`；断线后客户端退回 1 秒轮询 transcript。没有 SSE 时功能不降级，只是不流式。
+10. **审计字段不参与决策**：`Task.agentSessionId` 记录是谁在跑，`Member.sessions` 记录映射；判断「能否开工」仍只看前置与人工状态。回滚代价：旧版本 normalize 会丢弃这些字段，会话映射下次保存即丢失，但任务与验收不受影响（不升 `STATE_VERSION`）。
+
 ## 测试架构
 
 `node --test --test-isolation=none`（沙箱禁 spawn，故禁子进程隔离）；service.test.mjs 用 PassThrough 假 req/res 直调 `service.handle`；`process.env.DSH_HOME` 指向 mkdtemp 临时目录（service.mjs 构造时读取）。
@@ -127,3 +158,5 @@ v0.3 把「换队长」设计成两步无破坏操作（决策 24），但实际
 - `tests/team.test.mjs`（v0.3，18 个用例）自带 `withService(fn,{seed})` 夹具，每个用例独立 `DSH_HOME`——因为 service.test.mjs 是全局共享一个 home 的（成员状态会跨用例残留），团队用例需要干净起点。
 - `tests/model-catalog.test.mjs`（v0.4，8 个用例）：用假 `llm`/`agentDefaultModel` 服务驱动 `GET /models`，覆盖缺服务降级、目录枚举、单 provider 失败保留、非法行跳过、`listProviders` 抛错、默认模型回落、空串往返。`withService` 因此支持可选 `ctx` 注入（默认仍是只带 logger 的 `fakeCtx()`）。
 - `scripts/smoke-team.mjs`（v0.3）：端到端 8 步冒烟，末尾打印 `SMOKE-TEAM-PASS`；与 smoke-v2 / smoke-project 一样用 PassThrough 假 req/res，不依赖真 HTTP 服务。
+- 未发布（agent-team）：`tests/agents.test.mjs`（10 例，假 agents 服务）覆盖会话创建/resume/重建、角色工具、workspace-write、简报、降级、同工作区串行、唤醒合并、看门狗、打回重投、越权拒绝、批量建卡原子性；全量 99 例（98 通过）。
+- 未发布（task-dependencies）：store 新增 3 例、service 新增 7 例、team 新增 4 例，全量 89 例。`tests/workspaces.test.mjs` 有 1 例在 POSIX 下失败（`path.basename` 不认 `C:\...\` 反斜杠），`git archive HEAD` 复跑同样失败，与本次变更无关。

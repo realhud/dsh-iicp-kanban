@@ -521,3 +521,195 @@ test("stale project workspace bindings are healed on start", async () => {
     process.env.DSH_HOME = previous;
   }
 });
+
+/** Run `fn(service, home)` against a throwaway DSH home. */
+async function withService(fn) {
+  const home = tempHome();
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = home;
+  try {
+    const service = createKanbanService({ ctx: fakeCtx() });
+    service.start();
+    return await fn(service, home);
+  } finally {
+    process.env.DSH_HOME = previous;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+async function createTask(service, body) {
+  const { status, json } = await call(service, "/task.create", { method: "POST", body });
+  assert.equal(status, 200, json.message);
+  return json.task;
+}
+
+test("ready is derived, flips when the prerequisite completes, and is never persisted", async () => {
+  await withService(async (service, home) => {
+    const dep = await createTask(service, { title: "设计稿" });
+    const task = await createTask(service, { title: "实现", dependsOn: [dep.id] });
+
+    let state = await call(service, "/state");
+    let byId = new Map(state.json.tasks.map((item) => [item.id, item]));
+    assert.equal(byId.get(task.id).ready, false);
+    assert.equal(byId.get(dep.id).ready, true);
+
+    await call(service, "/task.update", { method: "POST", body: { id: dep.id, status: "done" } });
+    state = await call(service, "/state");
+    byId = new Map(state.json.tasks.map((item) => [item.id, item]));
+    assert.equal(byId.get(task.id).ready, true);
+
+    // Archived-but-done still satisfies readiness.
+    await call(service, "/task.update", { method: "POST", body: { id: dep.id, archived: true } });
+    state = await call(service, "/state");
+    byId = new Map(state.json.tasks.map((item) => [item.id, item]));
+    assert.equal(byId.get(task.id).ready, true);
+
+    const file = path.join(home, "storages", "iicp-kanban", "state.json");
+    const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.equal("ready" in raw.tasks.find((item) => item.id === task.id), false);
+  });
+});
+
+test("dependency graph rejects self, missing and cyclic references", async () => {
+  await withService(async (service) => {
+    const a = await createTask(service, { title: "A" });
+    const b = await createTask(service, { title: "B", dependsOn: [a.id] });
+
+    const self = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: a.id, dependsOn: [a.id] },
+    });
+    assert.equal(self.status, 400);
+
+    const missing = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: b.id, dependsOn: ["t_does_not_exist"] },
+    });
+    assert.equal(missing.status, 400);
+
+    const cycle = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: a.id, dependsOn: [b.id] },
+    });
+    assert.equal(cycle.status, 409);
+    assert.match(cycle.json.message, /成环/);
+  });
+});
+
+test("diamond dependencies are allowed, including across projects", async () => {
+  await withService(async (service) => {
+    const project = await call(service, "/project.create", { method: "POST", body: { name: "另一个项目" } });
+    const a = await createTask(service, { title: "底座" });
+    const b = await createTask(service, { title: "左", dependsOn: [a.id] });
+    const c = await createTask(service, { title: "右", dependsOn: [a.id], projectId: project.json.project.id });
+
+    const diamond = await call(service, "/task.create", {
+      method: "POST",
+      body: { title: "汇合", dependsOn: [b.id, c.id] },
+    });
+    assert.equal(diamond.status, 200, diamond.json.message);
+
+    // Cycles must be found across project boundaries too.
+    const cycle = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: a.id, dependsOn: [c.id] },
+    });
+    assert.equal(cycle.status, 409);
+  });
+});
+
+test("create refuses to start on unfinished prerequisites and traces an override to done", async () => {
+  await withService(async (service) => {
+    const dep = await createTask(service, { title: "前置" });
+    const before = (await call(service, "/state")).json.tasks.length;
+
+    const blocked = await call(service, "/task.create", {
+      method: "POST",
+      body: { title: "抢跑", status: "in_progress", dependsOn: [dep.id] },
+    });
+    assert.equal(blocked.status, 409);
+    assert.match(blocked.json.message, /前置/);
+    assert.equal((await call(service, "/state")).json.tasks.length, before);
+
+    const override = await call(service, "/task.create", {
+      method: "POST",
+      body: { title: "越权完成", status: "done", dependsOn: [dep.id] },
+    });
+    assert.equal(override.status, 200);
+    assert.ok(override.json.task.history.some((entry) => entry.note.includes("越权完成")));
+
+    await call(service, "/task.update", { method: "POST", body: { id: dep.id, status: "done" } });
+    const started = await call(service, "/task.create", {
+      method: "POST",
+      body: { title: "合法开工", status: "in_progress", dependsOn: [dep.id] },
+    });
+    assert.equal(started.status, 200);
+  });
+});
+
+test("update validates dependencies and status before applying either change", async () => {
+  await withService(async (service) => {
+    const dep = await createTask(service, { title: "前置" });
+    const task = await createTask(service, { title: "依赖方" });
+
+    const rejected = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: task.id, title: "改名", dependsOn: [dep.id], status: "in_progress" },
+    });
+    assert.equal(rejected.status, 409);
+
+    const state = await call(service, "/state");
+    const current = state.json.tasks.find((item) => item.id === task.id);
+    assert.equal(current.title, "依赖方");
+    assert.deepEqual(current.dependsOn, []);
+    assert.equal(current.status, "backlog");
+
+    await call(service, "/task.update", { method: "POST", body: { id: dep.id, status: "done" } });
+    const accepted = await call(service, "/task.update", {
+      method: "POST",
+      body: { id: task.id, dependsOn: [dep.id], status: "in_progress" },
+    });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.json.task.status, "in_progress");
+    assert.deepEqual(accepted.json.task.dependsOn, [dep.id]);
+  });
+});
+
+test("moving an unready task to in_progress is rejected; moving to done leaves a trace", async () => {
+  await withService(async (service) => {
+    const dep = await createTask(service, { title: "前置" });
+    const task = await createTask(service, { title: "依赖方", dependsOn: [dep.id] });
+
+    const blocked = await call(service, "/task.move", {
+      method: "POST",
+      body: { id: task.id, status: "in_progress" },
+    });
+    assert.equal(blocked.status, 409);
+
+    let state = await call(service, "/state");
+    assert.equal(state.json.tasks.find((item) => item.id === task.id).status, "backlog");
+
+    const done = await call(service, "/task.move", { method: "POST", body: { id: task.id, status: "done" } });
+    assert.equal(done.status, 200);
+    assert.ok(done.json.task.history.some((entry) => entry.note.includes("越权完成")));
+
+    state = await call(service, "/state");
+    assert.equal(state.json.tasks.find((item) => item.id === task.id).status, "done");
+  });
+});
+
+test("deleting a prerequisite detaches it from dependents and records history", async () => {
+  await withService(async (service) => {
+    const dep = await createTask(service, { title: "将被删除" });
+    const task = await createTask(service, { title: "依赖方", dependsOn: [dep.id] });
+
+    const deleted = await call(service, "/task.delete", { method: "POST", body: { id: dep.id } });
+    assert.equal(deleted.status, 200);
+
+    const state = await call(service, "/state");
+    const current = state.json.tasks.find((item) => item.id === task.id);
+    assert.deepEqual(current.dependsOn, []);
+    assert.equal(current.status, "backlog");
+    assert.ok(current.history.some((entry) => entry.note.includes("前置任务已删除")));
+  });
+});
